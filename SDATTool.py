@@ -1,11 +1,12 @@
 #SDAT-Tool by FroggestSpirit
-version = "0.0.2"
+version = "0.0.3"
 #Unpacks and builds SDAT files
 #Make backups, this can overwrite files without confirmation
 
 import sys
 import os
 import math
+import hashlib
 
 def read_long(pos):
 	global SDAT
@@ -17,6 +18,18 @@ def read_short(pos):
 	
 def get_params(list):
 	global SDATPos
+	global SEQNames
+	global SEQARCNames
+	global BANKNames
+	global WAVEARCNames
+	global PLAYERNames
+	global GROUPNames
+	global PLAYER2Names
+	global STRMNames
+	global fileType
+	global fileNameID
+	global fileName
+
 	retString = ""
 	for i in range(len(list)):
 		tempString = ""
@@ -34,7 +47,82 @@ def get_params(list):
 			tempString = str(read_long(SDATPos))
 			retString += tempString
 			SDATPos += 4
+		elif (list[i] == 10): #point to the filename
+			tempID = read_short(SDATPos)
+			matchID = 0
+			done = False
+			while(matchID < len(fileNameID) and not done):
+				if(fileNameID[matchID] == tempID):
+					done = True
+				else:
+					matchID += 1
+			retString += fileName[matchID] + fileType[matchID]
+			SDATPos += 2
+		elif (list[i] == 22): #point to the name of the bank
+			if(read_short(SDATPos) < len(BANKNames)):
+				retString += BANKNames[read_short(SDATPos)]
+			else:
+				retString += "BANK_" + str(read_short(SDATPos))
+			SDATPos += 2
+		elif (list[i] == 23): #point to the name of the wavarc
+			if(read_short(SDATPos) < len(WAVEARCNames)):
+				retString += WAVEARCNames[read_short(SDATPos)]
+			else:
+				if(read_short(SDATPos) == 65535): #unused slot
+					retString += "NULL"
+				else:
+					retString += "WAVARC_" + str(read_short(SDATPos))
+			SDATPos += 2
 	return retString
+
+def convert_params(tArray,list):
+	global SEQNames
+	global SEQARCNames
+	global BANKNames
+	global WAVEARCNames
+	global PLAYERNames
+	global GROUPNames
+	global PLAYER2Names
+	global STRMNames
+	global fileName
+
+	retList = []
+	retList.append(tArray[0])
+	for i in range(len(list)):
+		tempString = ""
+		if(list[i] == 0): #convert to integer
+			retList.append(int(tArray[i + 1]))
+		elif (list[i] == 10): #reference file by string
+			matchID = 0
+			done = False
+			while(matchID < len(fileName) and not done):
+				if(fileName[matchID] == tArray[i + 1]):
+					done = True
+				else:
+					matchID += 1
+			retList.append(matchID)
+		elif (list[i] == 22): #reference bank by string
+			matchID = 0
+			done = False
+			while(matchID < len(BANKNames) and not done):
+				if(BANKNames[matchID] == tArray[i + 1]):
+					done = True
+				else:
+					matchID += 1
+			retList.append(matchID)
+		elif (list[i] == 23): #reference wavearc by string
+			matchID = 0
+			done = False
+			if(tArray[i + 1] == "NULL"): #unused bank
+				done = True
+				matchID = 65535
+			while(matchID < len(WAVEARCNames) and not done):
+				if(WAVEARCNames[matchID] == tArray[i + 1]):
+					done = True
+				else:
+					matchID += 1
+			retList.append(matchID)
+	return retList
 
 def append_list(list): #append a list of bytes to SDAT
 	global SDAT
@@ -102,7 +190,21 @@ def get_string():
 sysargv = sys.argv
 echo = True
 mode = 0
+calcMD5 = False
 global SDAT
+
+global SEQNames
+global SEQARCNames
+global BANKNames
+global WAVEARCNames
+global PLAYERNames
+global GROUPNames
+global PLAYER2Names
+global STRMNames
+global fileType
+global fileNameID
+global fileName
+
 print("SDAT-Tool " + version + "\n")
 infileArg = -1;
 outfileArg = -1;
@@ -115,6 +217,8 @@ for i in range(len(sysargv)):
 				mode=2
 			elif(sysargv[i] == "-h" or sysargv[i] == "--help"):
 				mode=0
+			elif(sysargv[i] == "-m" or sysargv[i] == "--md5"):
+				calcMD5 = True
 		else:
 			if(infileArg == -1): infileArg=i
 			elif(outfileArg == -1): outfileArg=i
@@ -134,7 +238,7 @@ else:
 			print("Input and output files cannot be the same")
 			sys.exit()
 if(mode == 0): #Help
-	print("Usage: "+sysargv[0]+" [SDAT File] [mode] [SDAT Folder]\nMode:\n\t-b\tBuild SDAT\n\t-u\tUnpack SDAT\n\t-h\tShow this help message\n")
+	print("Usage: "+sysargv[0]+" [SDAT File] [mode] [SDAT Folder] [flags]\nMode:\n\t-b\tBuild SDAT\n\t-u\tUnpack SDAT\n\t-h\tShow this help message\n\nFlags:\n\t-m\tCalculate file MD5 when unpacking\n")
 	sys.exit()
 
 if(mode == 1): #Unpack
@@ -287,13 +391,14 @@ if(mode == 1): #Unpack
 	for i in range(entries):
 		SDATPos = read_long(SEQOffset + 4 + (i * 4)) + infoOffset
 		if(SDATPos - infoOffset > 0x40):
+			fileType.append(".sseq")
+			fileNameID.append(read_short(SDATPos))
 			if(blocks == 4 and i < len(SEQNames)):
-				fileType.append(".sseq")
-				fileNameID.append(read_short(SDATPos))
 				fileName.append(SEQNames[i])
-				outfile.write(SEQNames[i] + "," + get_params([2,2,2,1,1,1,1,1,1]) + "\n")
+				outfile.write(SEQNames[i] + "," + get_params([10,2,22,1,1,1,1,1,1]) + "\n")
 			else:
-				outfile.write("not_named," + get_params([2,2,2,1,1,1,1,1,1]) + "\n")
+				fileName.append("SEQ_" + str(i))
+				outfile.write("SEQ_" + str(i) + "," + get_params([10,2,22,1,1,1,1,1,1]) + "\n")
 		else:
 			outfile.write("NULL\n")
 	outfile.write("}\n\n")
@@ -304,13 +409,14 @@ if(mode == 1): #Unpack
 	for i in range(entries):
 		SDATPos = read_long(SEQARCOffset + 4 + (i * 4)) + infoOffset
 		if(SDATPos - infoOffset > 0x40):
+			fileType.append(".ssar")
+			fileNameID.append(read_short(SDATPos))
 			if(blocks == 4 and i < len(SEQARCNames)):
-				fileType.append(".ssar")
-				fileNameID.append(read_short(SDATPos))
 				fileName.append(SEQARCNames[i])
-				outfile.write(SEQARCNames[i] + "," + get_params([2,2]) + "\n")
+				outfile.write(SEQARCNames[i] + "," + get_params([10,2]) + "\n")
 			else:
-				outfile.write("not_named," + get_params([2,2]) + "\n")
+				fileName.append("SEQARC_" + str(i))
+				outfile.write("SEQARC_" + str(i) + "," + get_params([10,2]) + "\n")
 		else:
 			outfile.write("NULL\n")
 	outfile.write("}\n\n")
@@ -321,13 +427,14 @@ if(mode == 1): #Unpack
 	for i in range(entries):
 		SDATPos = read_long(BANKOffset + 4 + (i * 4)) + infoOffset
 		if(SDATPos - infoOffset > 0x40):
+			fileType.append(".sbnk")
+			fileNameID.append(read_short(SDATPos))
 			if(blocks == 4 and i < len(BANKNames)):
-				fileType.append(".sbnk")
-				fileNameID.append(read_short(SDATPos))
 				fileName.append(BANKNames[i])
-				outfile.write(BANKNames[i] + "," + get_params([2,2,2,2,2,2]) + "\n")
+				outfile.write(BANKNames[i] + "," + get_params([10,2,23,23,23,23]) + "\n")
 			else:
-				outfile.write("not_named," + get_params([2,2,2,2,2,2]) + "\n")
+				fileName.append("BANK_" + str(i))
+				outfile.write("BANK_" + str(i) + "," + get_params([10,2,23,23,23,23]) + "\n")
 		else:
 			outfile.write("NULL\n")
 	outfile.write("}\n\n")
@@ -338,13 +445,14 @@ if(mode == 1): #Unpack
 	for i in range(entries):
 		SDATPos = read_long(WAVEARCOffset + 4 + (i * 4)) + infoOffset
 		if(SDATPos - infoOffset > 0x40):
+			fileType.append(".swar")
+			fileNameID.append(read_short(SDATPos))
 			if(blocks == 4 and i < len(WAVEARCNames)):
-				fileType.append(".swar")
-				fileNameID.append(read_short(SDATPos))
 				fileName.append(WAVEARCNames[i])
-				outfile.write(WAVEARCNames[i] + "," + get_params([2,2]) + "\n")
+				outfile.write(WAVEARCNames[i] + "," + get_params([10,2]) + "\n")
 			else:
-				outfile.write("not_named," + get_params([2,2]) + "\n")
+				fileName.append("WAVARC_" + str(i))
+				outfile.write("WAVARC_" + str(i) + "," + get_params([10,2]) + "\n")
 		else:
 			outfile.write("NULL\n")
 	outfile.write("}\n\n")
@@ -358,7 +466,7 @@ if(mode == 1): #Unpack
 			if(blocks == 4 and i < len(PLAYERNames)):
 				outfile.write(PLAYERNames[i] + "," + get_params([1,1,1,1,4]) + "\n")
 			else:
-				outfile.write("not_named," + get_params([1,1,1,1,4]) + "\n")
+				outfile.write("PLAYER_" + str(i) + "," + get_params([1,1,1,1,4]) + "\n")
 		else:
 			outfile.write("NULL\n")
 	outfile.write("}\n\n")
@@ -373,7 +481,7 @@ if(mode == 1): #Unpack
 			if(blocks == 4 and i < len(GROUPNames)):
 				outfile.write(GROUPNames[i] + "," + get_params([4]))
 			else:
-				outfile.write("not_named," + get_params([4]))
+				outfile.write("GROUP_" + str(i) + "," + get_params([4]))
 			for ii in range(count):
 					outfile.write("," + get_params([4,4]))
 			outfile.write("\n")
@@ -390,7 +498,7 @@ if(mode == 1): #Unpack
 			if(blocks == 4 and i < len(PLAYER2Names)):
 				outfile.write(PLAYER2Names[i] + "," + get_params([1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]) + "\n")
 			else:
-				outfile.write("not_named," + get_params([1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]) + "\n")
+				outfile.write("PLAYER2_" + str(i) + "," + get_params([1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]) + "\n")
 		else:
 			outfile.write("NULL\n")
 	outfile.write("}\n\n")
@@ -401,13 +509,14 @@ if(mode == 1): #Unpack
 	for i in range(entries):
 		SDATPos = read_long(STRMOffset + 4 + (i * 4)) + infoOffset
 		if(SDATPos - infoOffset > 0x40):
+			fileType.append(".strm")
+			fileNameID.append(read_short(SDATPos))
 			if(blocks == 4 and i < len(STRMNames)):
-				fileType.append(".strm")
-				fileNameID.append(read_short(SDATPos))
 				fileName.append(STRMNames[i])
-				outfile.write(STRMNames[i] + "," + get_params([2,2,1,1,1,1,1,1,1,1]) + "\n")
+				outfile.write(STRMNames[i] + "," + get_params([10,2,1,1,1,1,1,1,1,1]) + "\n")
 			else:
-				outfile.write("not_named," + get_params([2,2,1,1,1,1,1,1,1,1]) + "\n")
+				fileName.append("STRM_" + str(i))
+				outfile.write("STRM_" + str(i) + "," + get_params([10,2,1,1,1,1,1,1,1,1]) + "\n")
 		else:
 			outfile.write("NULL\n")
 	outfile.write("}\n\n")
@@ -424,27 +533,30 @@ if(mode == 1): #Unpack
 		SDATPos = read_long(fatOffset + 12 + (i * 16))
 		tempSize = read_long(fatOffset + 16 + (i * 16))
 		tempFile = []
+		tempFileString = ""
 		done = False
-		if(blocks == 4):
-			fileRefID = 0
-			while(fileNameID[fileRefID] != i and not done):
-				fileRefID += 1
-				if(fileRefID >= len(fileNameID)):
-					fileRefID = -1
-					done = True
-		else:
-			fileRefID = -1
+		fileRefID = 0
+		while(fileNameID[fileRefID] != i and not done):
+			fileRefID += 1
+			if(fileRefID >= len(fileNameID)):
+				fileRefID = -1
+				done = True
 		if(fileRefID == -1):
-			outfile = open(sysargv[outfileArg] + "/Files/" + str(i),"wb")
-			IDFile.write(str(i) + "," + str(i) + "\n")
+			outfile = open(sysargv[outfileArg] + "/Files/unknown_" + str(i),"wb")
+			IDFile.write("unknown_" + str(i))
 		else:
 			outfile = open(sysargv[outfileArg] + "/Files/" + fileName[fileRefID] + fileType[fileRefID],"wb")
-			IDFile.write(str(i) + "," + fileName[fileRefID] + fileType[fileRefID] + "\n")
+			IDFile.write(fileName[fileRefID] + fileType[fileRefID])
 		for ii in range(tempSize):
 			tempFile.append(SDAT[SDATPos])
+			if(calcMD5):
+				tempFileString += str(SDAT[SDATPos])
 			SDATPos += 1
 			outfile.write(tempFile[ii].to_bytes(1,byteorder='little'))
-		outfile.close()
+		if(calcMD5):
+			fileMD5 = hashlib.md5(tempFileString.encode())
+			IDFile.write(";MD5 = " + fileMD5.hexdigest())
+		IDFile.write("\n")
 	IDFile.close()
 
 if(mode == 2): #Build
@@ -461,10 +573,9 @@ if(mode == 2): #Build
 	
 	IDFile = open(sysargv[outfileArg] + "/FileID.txt", "r")
 	thisLine = ""
-	lineNum = 1
+	numFiles = 0
 	done = False
 	fileName = []
-	fileID = []
 	while(not done):
 		thisLine = IDFile.readline()
 		if not thisLine:
@@ -473,25 +584,10 @@ if(mode == 2): #Build
 		thisLine = thisLine[0]
 		thisLine = thisLine.split("\n") #remove newline
 		thisLine = thisLine[0]
-		thisLine = thisLine.split(",") #split file ID and filename
-		if(thisLine[0] != "" and thisLine[1] != ""):
-			thisLine[0] = int(thisLine[0]) #convert ID to an integer
-			if(thisLine[0] > 65535):
-				print("\nFile ID too high.\n")
-				quit()
-			while(len(fileName) <= thisLine[0]):
-				fileName.append("")
-				fileID.append(-1)
-			fileName[thisLine[0]] = thisLine[1]
-			if(fileID[thisLine[0]] != -1):
-				print("\nFile ID ")
-				print(str(thisLine[0]))
-				print(" is defined more than once.\n")
-				quit()
-			fileID[thisLine[0]] = lineNum - 1
-			lineNum += 1
-	IDFile.close() #file ID's and names are stored now
-	numFiles = lineNum - 1
+		if(thisLine != ""):
+			fileName.append(thisLine)
+			numFiles += 1
+	IDFile.close() #file names are stored now
 
 	if(blocks == 4):
 		symbFile = open(sysargv[outfileArg] + "/SymbBlock.txt", "r")
@@ -657,6 +753,145 @@ if(mode == 2): #Build
 
 	infoFile = open(sysargv[outfileArg] + "/InfoBlock.txt", "r")
 	thisLine = ""
+	done = False
+	SEQNames = []
+	while(not done):
+		thisLine = infoFile.readline()
+		if not thisLine:
+			done = True
+		thisLine = thisLine.split(";") #ignore anything commented out
+		thisLine = thisLine[0]
+		thisLine = thisLine.split("\n") #remove newline
+		thisLine = thisLine[0]
+		if(thisLine.find("{") == -1): #ignore lines with {
+			if(thisLine.find("}") != -1): #end of section
+				done = True
+			elif(thisLine != ""):
+				thisLine = thisLine.split(",") #split parameters
+				SEQNames.append(thisLine[0])
+
+	done = False
+	SEQARCNames = []
+	while(not done):
+		thisLine = infoFile.readline()
+		if not thisLine:
+			done = True
+		thisLine = thisLine.split(";") #ignore anything commented out
+		thisLine = thisLine[0]
+		thisLine = thisLine.split("\n") #remove newline
+		thisLine = thisLine[0]
+		if(thisLine.find("{") == -1): #ignore lines with {
+			if(thisLine.find("}") != -1): #end of section
+				done = True
+			elif(thisLine != ""):
+				thisLine = thisLine.split(",") #split parameters
+				SEQARCNames.append(thisLine[0])
+
+	done = False
+	BANKNames = []
+	while(not done):
+		thisLine = infoFile.readline()
+		if not thisLine:
+			done = True
+		thisLine = thisLine.split(";") #ignore anything commented out
+		thisLine = thisLine[0]
+		thisLine = thisLine.split("\n") #remove newline
+		thisLine = thisLine[0]
+		if(thisLine.find("{") == -1): #ignore lines with {
+			if(thisLine.find("}") != -1): #end of section
+				done = True
+			elif(thisLine != ""):
+				thisLine = thisLine.split(",") #split parameters
+				BANKNames.append(thisLine[0])
+
+	done = False
+	WAVEARCNames = []
+	while(not done):
+		thisLine = infoFile.readline()
+		if not thisLine:
+			done = True
+		thisLine = thisLine.split(";") #ignore anything commented out
+		thisLine = thisLine[0]
+		thisLine = thisLine.split("\n") #remove newline
+		thisLine = thisLine[0]
+		if(thisLine.find("{") == -1): #ignore lines with {
+			if(thisLine.find("}") != -1): #end of section
+				done = True
+			elif(thisLine != ""):
+				thisLine = thisLine.split(",") #split parameters
+				WAVEARCNames.append(thisLine[0])
+
+	done = False
+	PLAYERNames = []
+	while(not done):
+		thisLine = infoFile.readline()
+		if not thisLine:
+			done = True
+		thisLine = thisLine.split(";") #ignore anything commented out
+		thisLine = thisLine[0]
+		thisLine = thisLine.split("\n") #remove newline
+		thisLine = thisLine[0]
+		if(thisLine.find("{") == -1): #ignore lines with {
+			if(thisLine.find("}") != -1): #end of section
+				done = True
+			elif(thisLine != ""):
+				thisLine = thisLine.split(",") #split parameters
+				PLAYERNames.append(thisLine[0])
+
+	done = False
+	GROUPNames = []
+	while(not done):
+		thisLine = infoFile.readline()
+		if not thisLine:
+			done = True
+		thisLine = thisLine.split(";") #ignore anything commented out
+		thisLine = thisLine[0]
+		thisLine = thisLine.split("\n") #remove newline
+		thisLine = thisLine[0]
+		if(thisLine.find("{") == -1): #ignore lines with {
+			if(thisLine.find("}") != -1): #end of section
+				done = True
+			elif(thisLine != ""):
+				thisLine = thisLine.split(",") #split parameters
+				GROUPNames.append(thisLine[0])
+
+	done = False
+	PLAYER2Names = []
+	while(not done):
+		thisLine = infoFile.readline()
+		if not thisLine:
+			done = True
+		thisLine = thisLine.split(";") #ignore anything commented out
+		thisLine = thisLine[0]
+		thisLine = thisLine.split("\n") #remove newline
+		thisLine = thisLine[0]
+		if(thisLine.find("{") == -1): #ignore lines with {
+			if(thisLine.find("}") != -1): #end of section
+				done = True
+			elif(thisLine != ""):
+				thisLine = thisLine.split(",") #split parameters
+				PLAYER2Names.append(thisLine[0])
+
+	done = False
+	STRMNames = []
+	while(not done):
+		thisLine = infoFile.readline()
+		if not thisLine:
+			done = True
+		thisLine = thisLine.split(";") #ignore anything commented out
+		thisLine = thisLine[0]
+		thisLine = thisLine.split("\n") #remove newline
+		thisLine = thisLine[0]
+		if(thisLine.find("{") == -1): #ignore lines with {
+			if(thisLine.find("}") != -1): #end of section
+				done = True
+			elif(thisLine != ""):
+				thisLine = thisLine.split(",") #split parameters
+				STRMNames.append(thisLine[0])
+	infoFile.close() #names of the entries of groups are now stored
+
+	infoFile = open(sysargv[outfileArg] + "/InfoBlock.txt", "r")
+	thisLine = ""
 	seqNum = 0
 	done = False
 	params = 10
@@ -683,8 +918,7 @@ if(mode == 2): #Build
 					if(len(thisLine) != params):
 						print("\nSEQ wrong number of parameters.\n")
 						quit()
-					for i in range(params - 1):
-						thisLine[i + 1] = int(thisLine[i + 1]) #convert ID to an integer
+					thisLine = convert_params(thisLine,[10,0,22,0,0,0,0,0,0])
 					for i in range(params):
 						seqData.append(thisLine[i])
 					seqNum += 1
@@ -715,8 +949,7 @@ if(mode == 2): #Build
 					if(len(thisLine) != params):
 						print("\nSEQARC wrong number of parameters.\n")
 						quit()
-					for i in range(params - 1):
-						thisLine[i + 1] = int(thisLine[i + 1]) #convert ID to an integer
+					thisLine = convert_params(thisLine,[10,0])
 					for i in range(params):
 						seqarcData.append(thisLine[i])
 					seqarcNum += 1
@@ -747,8 +980,7 @@ if(mode == 2): #Build
 					if(len(thisLine) != params):
 						print("\nBANK wrong number of parameters.\n")
 						quit()
-					for i in range(params - 1):
-						thisLine[i + 1] = int(thisLine[i + 1]) #convert ID to an integer
+					thisLine = convert_params(thisLine,[10,0,23,23,23,23])
 					for i in range(params):
 						bankData.append(thisLine[i])
 					bankNum += 1
@@ -779,8 +1011,7 @@ if(mode == 2): #Build
 					if(len(thisLine) != params):
 						print("\nWAVARC wrong number of parameters.\n")
 						quit()
-					for i in range(params - 1):
-						thisLine[i + 1] = int(thisLine[i + 1]) #convert ID to an integer
+					thisLine = convert_params(thisLine,[10,0])
 					for i in range(params):
 						wavarcData.append(thisLine[i])
 					wavarcNum += 1
@@ -811,8 +1042,7 @@ if(mode == 2): #Build
 					if(len(thisLine) != params):
 						print("\nPLAYER wrong number of parameters.\n")
 						quit()
-					for i in range(params - 1):
-						thisLine[i + 1] = int(thisLine[i + 1]) #convert ID to an integer
+					thisLine = convert_params(thisLine,[0,0,0,0,0])
 					for i in range(params):
 						playerData.append(thisLine[i])
 					playerNum += 1
@@ -874,8 +1104,7 @@ if(mode == 2): #Build
 					if(len(thisLine) != params):
 						print("\nPLAYER2 wrong number of parameters.\n")
 						quit()
-					for i in range(params - 1):
-						thisLine[i + 1] = int(thisLine[i + 1]) #convert ID to an integer
+					thisLine = convert_params(thisLine,[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0])
 					for i in range(params):
 						player2Data.append(thisLine[i])
 					player2Num += 1
@@ -906,8 +1135,7 @@ if(mode == 2): #Build
 					if(len(thisLine) != params):
 						print("\nSTRM wrong number of parameters.\n")
 						quit()
-					for i in range(params - 1):
-						thisLine[i + 1] = int(thisLine[i + 1]) #convert ID to an integer
+					thisLine = convert_params(thisLine,[10,0])
 					for i in range(params):
 						strmData.append(thisLine[i])
 					strmNum += 1
@@ -1062,7 +1290,7 @@ if(mode == 2): #Build
 	for i in range(seqNum):
 		if(seqData[(i * params)] != "NULL"):
 			write_long((seqOffset + 4) + (i * 4), len(SDAT) - infoBlockOffset)
-			append_short(fileID[seqData[(i * params) + 1]])
+			append_short(seqData[(i * params) + 1])
 			append_short(seqData[(i * params) + 2])
 			append_short(seqData[(i * params) + 3])
 			append_byte(seqData[(i * params) + 4])
@@ -1080,7 +1308,7 @@ if(mode == 2): #Build
 	for i in range(seqarcNum):
 		if(seqarcData[(i * params)] != "NULL"):
 			write_long((seqarcOffset + 4) + (i * 4), len(SDAT) - infoBlockOffset)
-			append_short(fileID[seqarcData[(i * params) + 1]])
+			append_short(seqarcData[(i * params) + 1])
 			append_short(seqarcData[(i * params) + 2])
 
 	params = 7
@@ -1091,7 +1319,7 @@ if(mode == 2): #Build
 	for i in range(bankNum):
 		if(bankData[(i * params)] != "NULL"):
 			write_long((bankOffset + 4) + (i * 4), len(SDAT) - infoBlockOffset)
-			append_short(fileID[bankData[(i * params) + 1]])
+			append_short(bankData[(i * params) + 1])
 			append_short(bankData[(i * params) + 2])
 			for ii in range(4):
 				append_short(bankData[(i * params) + 3 + ii])
@@ -1104,7 +1332,7 @@ if(mode == 2): #Build
 	for i in range(wavarcNum):
 		if(wavarcData[(i * params)] != "NULL"):
 			write_long((wavarcOffset + 4) + (i * 4), len(SDAT) - infoBlockOffset)
-			append_short(fileID[wavarcData[(i * params) + 1]])
+			append_short(wavarcData[(i * params) + 1])
 			append_short(wavarcData[(i * params) + 2])
 
 	params = 6
@@ -1164,7 +1392,7 @@ if(mode == 2): #Build
 	for i in range(strmNum):
 		if(strmData[(i * params)] != "NULL"):
 			write_long((strmOffset + 4) + (i * 4), len(SDAT) - infoBlockOffset)
-			append_short(fileID[strmData[(i * params) + 1]])
+			append_short(strmData[(i * params) + 1])
 			append_short(strmData[(i * params) + 2])
 			append_byte(strmData[(i * params) + 3])
 			append_byte(strmData[(i * params) + 4])
@@ -1201,23 +1429,22 @@ if(mode == 2): #Build
 		append_reserve(1) #pad to the nearest 0x20 byte alignment
 
 	curFile = 0
-	for i in range(len(fileID)):
-		if(fileID[i] != -1):
-			if not os.path.exists(sysargv[outfileArg] + "/Files/" + fileName[i]):
-				print("\nMissing File:'" + sysargv[outfileArg] + "/Files/" + fileName[i] + "'\n")
-				quit()
-			curFileLoc = len(SDAT)
-			write_long((curFile * 16) + 12 + fatBlockOffset,curFileLoc) #write file pointer to the fatBlock
-			tempFile = open(sysargv[outfileArg] + "/Files/" + fileName[i], "rb")
-			tFileBuffer = []
-			tFileBuffer = tempFile.read()
-			tempFile.close()
-			write_long((curFile * 16) + 16 + fatBlockOffset,len(tFileBuffer))#write file size to the fatBlock
-			for ii in range(len(tFileBuffer)):
-				append_byte(tFileBuffer[ii])
-			while((len(SDAT) & 0xFFFFFFE0) != len(SDAT)):
-				append_reserve(1) #pad to the nearest 0x20 byte alignment
-			curFile += 1
+	for i in range(len(fileName)):
+		if not os.path.exists(sysargv[outfileArg] + "/Files/" + fileName[i]):
+			print("\nMissing File:'" + sysargv[outfileArg] + "/Files/" + fileName[i] + "'\n")
+			quit()
+		curFileLoc = len(SDAT)
+		write_long((curFile * 16) + 12 + fatBlockOffset,curFileLoc) #write file pointer to the fatBlock
+		tempFile = open(sysargv[outfileArg] + "/Files/" + fileName[i], "rb")
+		tFileBuffer = []
+		tFileBuffer = tempFile.read()
+		tempFile.close()
+		write_long((curFile * 16) + 16 + fatBlockOffset,len(tFileBuffer))#write file size to the fatBlock
+		for ii in range(len(tFileBuffer)):
+			append_byte(tFileBuffer[ii])
+		while((len(SDAT) & 0xFFFFFFE0) != len(SDAT)):
+			append_reserve(1) #pad to the nearest 0x20 byte alignment
+		curFile += 1
 	write_long(16 + (headeri * 8), fileBlockOffset)
 	write_long(20 + (headeri * 8), len(SDAT) - fileBlockOffset)
 	write_long(fileBlockOffset + 4,len(SDAT) - fileBlockOffset) #write fileBlock size
