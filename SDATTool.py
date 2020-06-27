@@ -1,5 +1,5 @@
 #SDAT-Tool by FroggestSpirit
-version = "0.0.3"
+version = "0.0.4"
 #Unpacks and builds SDAT files
 #Make backups, this can overwrite files without confirmation
 
@@ -16,6 +16,28 @@ def read_short(pos):
 	global SDAT
 	return (SDAT[pos + 1] * 0x100) + SDAT[pos]
 	
+def add_filename(name):
+	global fileName
+	global numFiles
+	exists = False
+	for i in range(len(fileName)):
+		if(fileName[i] == name):
+			exists = True
+			i = len(fileName)
+	if(not exists):
+		fileName.append(name)
+		numFiles += 1
+
+def check_optimize(optimizeFlag, itemUsed, item): #return true to add the item, return false to skip it (unused)
+	if(not optimizeFlag): #skip this if the build is not optimized
+		return True
+	if(item == "NULL"): #skip item if null
+		return False
+	for i in range(len(itemUsed)):
+		if(itemUsed[i] == item):
+			return True
+	return False
+
 def get_params(list):
 	global SDATPos
 	global SEQNames
@@ -73,6 +95,12 @@ def get_params(list):
 				else:
 					retString += "WAVARC_" + str(read_short(SDATPos))
 			SDATPos += 2
+		elif (list[i] == 24): #point to the name of the player
+			if(read_short(SDATPos) < len(PLAYERNames)):
+				retString += PLAYERNames[read_short(SDATPos)]
+			else:
+				retString += "PLAYER_" + str(read_short(SDATPos))
+			SDATPos += 1
 	return retString
 
 def convert_params(tArray,list):
@@ -118,6 +146,15 @@ def convert_params(tArray,list):
 				matchID = 65535
 			while(matchID < len(WAVEARCNames) and not done):
 				if(WAVEARCNames[matchID] == tArray[i + 1]):
+					done = True
+				else:
+					matchID += 1
+			retList.append(matchID)
+		elif (list[i] == 24): #reference player by string
+			matchID = 0
+			done = False
+			while(matchID < len(PLAYERNames) and not done):
+				if(PLAYERNames[matchID] == tArray[i + 1]):
 					done = True
 				else:
 					matchID += 1
@@ -191,6 +228,9 @@ sysargv = sys.argv
 echo = True
 mode = 0
 calcMD5 = False
+optimize = False
+skipSymbBlock = False
+skipFileOrder = False
 global SDAT
 
 global SEQNames
@@ -204,6 +244,7 @@ global STRMNames
 global fileType
 global fileNameID
 global fileName
+global numFiles
 
 print("SDAT-Tool " + version + "\n")
 infileArg = -1;
@@ -212,13 +253,18 @@ for i in range(len(sysargv)):
 	if(i > 0):
 		if(sysargv[i].startswith("-")):
 			if(sysargv[i] == "-u" or sysargv[i] == "--unpack"):
-				mode=1
+				mode = 1
 			elif(sysargv[i] == "-b" or sysargv[i] == "--build"):
-				mode=2
+				mode = 2
 			elif(sysargv[i] == "-h" or sysargv[i] == "--help"):
-				mode=0
+				mode = 0
 			elif(sysargv[i] == "-m" or sysargv[i] == "--md5"):
 				calcMD5 = True
+			elif(sysargv[i] == "-o" or sysargv[i] == "--optimize"):
+				optimize = True
+				skipFileOrder = True
+			elif(sysargv[i] == "-ns" or sysargv[i] == "--noSymbBlock"):
+				skipSymbBlock = True
 		else:
 			if(infileArg == -1): infileArg=i
 			elif(outfileArg == -1): outfileArg=i
@@ -238,7 +284,7 @@ else:
 			print("Input and output files cannot be the same")
 			sys.exit()
 if(mode == 0): #Help
-	print("Usage: "+sysargv[0]+" [SDAT File] [mode] [SDAT Folder] [flags]\nMode:\n\t-b\tBuild SDAT\n\t-u\tUnpack SDAT\n\t-h\tShow this help message\n\nFlags:\n\t-m\tCalculate file MD5 when unpacking\n")
+	print("Usage: "+sysargv[0]+" [SDAT File] [mode] [SDAT Folder] [flags]\nMode:\n\t-b\tBuild SDAT\n\t-u\tUnpack SDAT\n\t-h\tShow this help message\n\nFlags:\n\t-m\tCalculate file MD5 when unpacking\n\t-o\tBuild Optimized\n\t-ns\tBuild without a SymbBlock\n")
 	sys.exit()
 
 if(mode == 1): #Unpack
@@ -269,6 +315,15 @@ if(mode == 1): #Unpack
 
 	global outfile
 
+	SEQNames = []
+	SEQARCNames = []
+	BANKNames = []
+	WAVEARCNames = []
+	PLAYERNames = []
+	GROUPNames = []
+	PLAYER2Names = []
+	STRMNames = []
+
 	#Symb Block
 	if(blocks == 4):
 		SDATPos = symbOffset + 8
@@ -281,94 +336,71 @@ if(mode == 1): #Unpack
 		PLAYER2Offset = read_long(SDATPos + 24) + symbOffset
 		STRMOffset = read_long(SDATPos + 28) + symbOffset
 
-		SEQNames = []
-		outfile = open(sysargv[outfileArg] + "/SymbBlock.txt","w")
+		if(read_long(SEQARCOffset) > 0):
+			outfile = open(sysargv[outfileArg] + "/SymbBlock.txt","w")
 		SDATPos = SEQOffset
 		entries = read_long(SDATPos)
-		outfile.write("SEQ{\n")
 		for i in range(entries):
 			SDATPos = read_long(SEQOffset + 4 + (i * 4)) + symbOffset
 			SEQNames.append(get_string())
-			outfile.write(SEQNames[len(SEQNames) - 1] + "\n")
-		outfile.write("}\n\n")
 
-		SEQARCNames = []
 		SDATPos = SEQARCOffset
 		entries = read_long(SDATPos)
-		outfile.write("SEQARC{\n")
+		if(entries > 0):
+			outfile.write("SEQARC{\n")
 		for i in range(entries):
 			SDATPos = read_long(SEQARCOffset + 4 + (i * 8)) + symbOffset
 			SEQARCNames.append(get_string())
-			outfile.write(SEQARCNames[len(SEQARCNames) - 1] + "\n")
+			if(entries > 0):
+				outfile.write(SEQARCNames[len(SEQARCNames) - 1] + "\n")
 			SDATPos = read_long(SEQARCOffset + 8 + (i * 8)) + symbOffset
 			SEQARCSubOffset = SDATPos
 			count = read_long(SDATPos)
 			for ii in range(count):
 				SDATPos = read_long(SEQARCSubOffset + 4 + (ii * 4)) + symbOffset
-				outfile.write("\t" + get_string() + "\n")
-		outfile.write("}\n\n")
+				if(entries > 0):
+					outfile.write("\t" + get_string() + "\n")
+		if(entries > 0):
+			outfile.write("}\n\n")
 
-		BANKNames = []
 		SDATPos = BANKOffset
 		entries = read_long(SDATPos)
-		outfile.write("BANK{\n")
 		for i in range(entries):
 			SDATPos = read_long(BANKOffset + 4 + (i * 4)) + symbOffset
 			BANKNames.append(get_string())
-			outfile.write(BANKNames[len(BANKNames) - 1] + "\n")
-		outfile.write("}\n\n")
 
-		WAVEARCNames = []
 		SDATPos = WAVEARCOffset
 		entries = read_long(SDATPos)
-		outfile.write("WAVEARC{\n")
 		for i in range(entries):
 			SDATPos = read_long(WAVEARCOffset + 4 + (i * 4)) + symbOffset
 			WAVEARCNames.append(get_string())
-			outfile.write(WAVEARCNames[len(WAVEARCNames) - 1] + "\n")
-		outfile.write("}\n\n")
 
-		PLAYERNames = []
 		SDATPos = PLAYEROffset
 		entries = read_long(SDATPos)
-		outfile.write("PLAYER{\n")
 		for i in range(entries):
 			SDATPos = read_long(PLAYEROffset + 4 + (i * 4)) + symbOffset
 			PLAYERNames.append(get_string())
-			outfile.write(PLAYERNames[len(PLAYERNames) - 1] + "\n")
-		outfile.write("}\n\n")
 
-		GROUPNames = []
 		SDATPos = GROUPOffset
 		entries = read_long(SDATPos)
-		outfile.write("GROUP{\n")
 		for i in range(entries):
 			SDATPos = read_long(GROUPOffset + 4 + (i * 4)) + symbOffset
 			GROUPNames.append(get_string())
-			outfile.write(GROUPNames[len(GROUPNames) - 1] + "\n")
-		outfile.write("}\n\n")
 
-		PLAYER2Names = []
 		SDATPos = PLAYER2Offset
 		entries = read_long(SDATPos)
-		outfile.write("PLAYER2{\n")
 		for i in range(entries):
 			SDATPos = read_long(PLAYER2Offset + 4 + (i * 4)) + symbOffset
 			PLAYER2Names.append(get_string())
-			outfile.write(PLAYER2Names[len(PLAYER2Names) - 1] + "\n")
-		outfile.write("}\n\n")
 
-		STRMNames = []
 		SDATPos = STRMOffset
 		entries = read_long(SDATPos)
-		outfile.write("STRM{\n")
 		for i in range(entries):
 			SDATPos = read_long(STRMOffset + 4 + (i * 4)) + symbOffset
 			STRMNames.append(get_string())
-			outfile.write(STRMNames[len(STRMNames) - 1] + "\n")
-		outfile.write("}\n\n")
 
-		outfile.close()
+		if(read_long(SEQARCOffset) > 0):
+			outfile.close()
 
 	#Info Block
 	SDATPos = infoOffset + 8
@@ -395,10 +427,10 @@ if(mode == 1): #Unpack
 			fileNameID.append(read_short(SDATPos))
 			if(blocks == 4 and i < len(SEQNames)):
 				fileName.append(SEQNames[i])
-				outfile.write(SEQNames[i] + "," + get_params([10,2,22,1,1,1,1,1,1]) + "\n")
+				outfile.write(SEQNames[i] + "," + get_params([10,2,22,1,1,1,24,1,1]) + "\n")
 			else:
 				fileName.append("SEQ_" + str(i))
-				outfile.write("SEQ_" + str(i) + "," + get_params([10,2,22,1,1,1,1,1,1]) + "\n")
+				outfile.write("SEQ_" + str(i) + "," + get_params([10,2,22,1,1,1,24,1,1]) + "\n")
 		else:
 			outfile.write("NULL\n")
 	outfile.write("}\n\n")
@@ -560,198 +592,42 @@ if(mode == 1): #Unpack
 	IDFile.close()
 
 if(mode == 2): #Build
-	blocks = 4 #temporary, switch to 4 after symbBlock is coded
+	blocks = 4
+	if(skipSymbBlock):
+		blocks = 3	
 	if not os.path.exists(sysargv[outfileArg] + "/FileID.txt"):
-		print("\nMissing FileID.txt\n")
-		quit()
+		print("\nMissing FileID.txt, files will be ordered as they are in the InfoBlock.\n")
+		skipFileOrder = True
 	if not os.path.exists(sysargv[outfileArg] + "/InfoBlock.txt"):
 		print("\nMissing InfoBlock.txt\n")
 		quit()
-	if not os.path.exists(sysargv[outfileArg] + "/SymbBlock.txt"):
-		print("\nMissing SymbBlock.txt, proceeding without SymbBlock.\n")
-		blocks = 3
-	
-	IDFile = open(sysargv[outfileArg] + "/FileID.txt", "r")
-	thisLine = ""
-	numFiles = 0
-	done = False
+
 	fileName = []
-	while(not done):
-		thisLine = IDFile.readline()
-		if not thisLine:
-			done = True
-		thisLine = thisLine.split(";") #ignore anything commented out
-		thisLine = thisLine[0]
-		thisLine = thisLine.split("\n") #remove newline
-		thisLine = thisLine[0]
-		if(thisLine != ""):
-			fileName.append(thisLine)
-			numFiles += 1
-	IDFile.close() #file names are stored now
-
-	if(blocks == 4):
-		symbFile = open(sysargv[outfileArg] + "/SymbBlock.txt", "r")
+	numFiles = 0
+	if(not skipFileOrder):
+		IDFile = open(sysargv[outfileArg] + "/FileID.txt", "r")
 		thisLine = ""
-		seqSymbNum = 0
 		done = False
-		seqSymbName = []
 		while(not done):
-			thisLine = symbFile.readline()
+			thisLine = IDFile.readline()
 			if not thisLine:
 				done = True
 			thisLine = thisLine.split(";") #ignore anything commented out
 			thisLine = thisLine[0]
 			thisLine = thisLine.split("\n") #remove newline
 			thisLine = thisLine[0]
-			if(thisLine.find("{") == -1): #ignore lines with {
-				if(thisLine.find("}") != -1): #end of section
-					done = True
-				elif(thisLine != ""):
-					seqSymbName.append(thisLine)
-					seqSymbNum += 1
-
-		seqarcSymbNum = 0
-		seqarcSymbSubNum = 0
-		done = False
-		seqarcSymbName = []
-		seqarcSymbSubCount = [] #keep track of how many sub strings are in each seqarc
-		while(not done):
-			thisLine = symbFile.readline()
-			if not thisLine:
-				done = True
-			thisLine = thisLine.split(";") #ignore anything commented out
-			thisLine = thisLine[0]
-			thisLine = thisLine.split("\n") #remove newline
-			thisLine = thisLine[0]
-			if(thisLine.find("{") == -1): #ignore lines with {
-				if(thisLine.find("}") != -1): #end of section
-					done = True
-				elif(thisLine != ""):
-					if(thisLine[:1] == "\t"): #is a sub string
-						seqarcSymbName.append(thisLine[1:])
-						seqarcSymbSubNum += 1
-						if(seqarcSymbNum == 0):
-							print("\nCan't have a sub seqarc before a main one.\n")
-							quit()
-					else:
-						seqarcSymbName.append(thisLine)
-						if(seqarcSymbNum > 0):
-							seqarcSymbSubCount.append(seqarcSymbSubNum)
-						seqarcSymbSubNum = 0
-						seqarcSymbNum += 1
-		seqarcSymbSubCount.append(seqarcSymbSubNum)
-
-		bankSymbNum = 0
-		done = False
-		bankSymbName = []
-		while(not done):
-			thisLine = symbFile.readline()
-			if not thisLine:
-				done = True
-			thisLine = thisLine.split(";") #ignore anything commented out
-			thisLine = thisLine[0]
-			thisLine = thisLine.split("\n") #remove newline
-			thisLine = thisLine[0]
-			if(thisLine.find("{") == -1): #ignore lines with {
-				if(thisLine.find("}") != -1): #end of section
-					done = True
-				elif(thisLine != ""):
-					bankSymbName.append(thisLine)
-					bankSymbNum += 1
-
-		wavarcSymbNum = 0
-		done = False
-		wavarcSymbName = []
-		while(not done):
-			thisLine = symbFile.readline()
-			if not thisLine:
-				done = True
-			thisLine = thisLine.split(";") #ignore anything commented out
-			thisLine = thisLine[0]
-			thisLine = thisLine.split("\n") #remove newline
-			thisLine = thisLine[0]
-			if(thisLine.find("{") == -1): #ignore lines with {
-				if(thisLine.find("}") != -1): #end of section
-					done = True
-				elif(thisLine != ""):
-					wavarcSymbName.append(thisLine)
-					wavarcSymbNum += 1
-
-		playerSymbNum = 0
-		done = False
-		playerSymbName = []
-		while(not done):
-			thisLine = symbFile.readline()
-			if not thisLine:
-				done = True
-			thisLine = thisLine.split(";") #ignore anything commented out
-			thisLine = thisLine[0]
-			thisLine = thisLine.split("\n") #remove newline
-			thisLine = thisLine[0]
-			if(thisLine.find("{") == -1): #ignore lines with {
-				if(thisLine.find("}") != -1): #end of section
-					done = True
-				elif(thisLine != ""):
-					playerSymbName.append(thisLine)
-					playerSymbNum += 1
-
-		groupSymbNum = 0
-		done = False
-		groupSymbName = []
-		while(not done):
-			thisLine = symbFile.readline()
-			if not thisLine:
-				done = True
-			thisLine = thisLine.split(";") #ignore anything commented out
-			thisLine = thisLine[0]
-			thisLine = thisLine.split("\n") #remove newline
-			thisLine = thisLine[0]
-			if(thisLine.find("{") == -1): #ignore lines with {
-				if(thisLine.find("}") != -1): #end of section
-					done = True
-				elif(thisLine != ""):
-					groupSymbName.append(thisLine)
-					groupSymbNum += 1
-
-		player2SymbNum = 0
-		done = False
-		player2SymbName = []
-		while(not done):
-			thisLine = symbFile.readline()
-			if not thisLine:
-				done = True
-			thisLine = thisLine.split(";") #ignore anything commented out
-			thisLine = thisLine[0]
-			thisLine = thisLine.split("\n") #remove newline
-			thisLine = thisLine[0]
-			if(thisLine.find("{") == -1): #ignore lines with {
-				if(thisLine.find("}") != -1): #end of section
-					done = True
-				elif(thisLine != ""):
-					player2SymbName.append(thisLine)
-					player2SymbNum += 1
-
-		strmSymbNum = 0
-		done = False
-		strmSymbName = []
-		while(not done):
-			thisLine = symbFile.readline()
-			if not thisLine:
-				done = True
-			thisLine = thisLine.split(";") #ignore anything commented out
-			thisLine = thisLine[0]
-			thisLine = thisLine.split("\n") #remove newline
-			thisLine = thisLine[0]
-			if(thisLine.find("{") == -1): #ignore lines with {
-				if(thisLine.find("}") != -1): #end of section
-					done = True
-				elif(thisLine != ""):
-					strmSymbName.append(thisLine)
-					strmSymbNum += 1
-
-		symbFile.close() #symb strings are stored now
+			if(thisLine != ""):
+				fileName.append(thisLine)
+				numFiles += 1
+		IDFile.close() #file names are stored now
 
 	infoFile = open(sysargv[outfileArg] + "/InfoBlock.txt", "r")
+
+	fileUsed = []#keep track of items used for the optimization flag
+	bankUsed = []
+	wavearcUsed = []
+	playerUsed = []
+
 	thisLine = ""
 	done = False
 	SEQNames = []
@@ -769,9 +645,16 @@ if(mode == 2): #Build
 			elif(thisLine != ""):
 				thisLine = thisLine.split(",") #split parameters
 				SEQNames.append(thisLine[0])
+				if(thisLine[0] != "NULL"):
+					if(skipFileOrder):
+						add_filename(thisLine[1])
+					fileUsed.append(thisLine[1])
+					bankUsed.append(thisLine[3])
+					playerUsed.append(thisLine[7])
 
 	done = False
 	SEQARCNames = []
+	seqarcSymbSubCount = [] #keep track of how many sub strings are in each seqarc
 	while(not done):
 		thisLine = infoFile.readline()
 		if not thisLine:
@@ -786,6 +669,11 @@ if(mode == 2): #Build
 			elif(thisLine != ""):
 				thisLine = thisLine.split(",") #split parameters
 				SEQARCNames.append(thisLine[0])
+				seqarcSymbSubCount.append(0)
+				if(thisLine[0] != "NULL"):
+					if(skipFileOrder):
+						add_filename(thisLine[1])
+					fileUsed.append(thisLine[1])
 
 	done = False
 	BANKNames = []
@@ -802,7 +690,15 @@ if(mode == 2): #Build
 				done = True
 			elif(thisLine != ""):
 				thisLine = thisLine.split(",") #split parameters
-				BANKNames.append(thisLine[0])
+				if(check_optimize(optimize, bankUsed, thisLine[0])):
+					BANKNames.append(thisLine[0])
+					if(thisLine[0] != "NULL"):
+						if(skipFileOrder):
+							add_filename(thisLine[1])
+						fileUsed.append(thisLine[1])
+						for i in range(4):
+							if(thisLine[i + 3] != "NULL"):
+								wavearcUsed.append(thisLine[i + 3])
 
 	done = False
 	WAVEARCNames = []
@@ -819,7 +715,12 @@ if(mode == 2): #Build
 				done = True
 			elif(thisLine != ""):
 				thisLine = thisLine.split(",") #split parameters
-				WAVEARCNames.append(thisLine[0])
+				if(check_optimize(optimize, wavearcUsed, thisLine[0])):
+					WAVEARCNames.append(thisLine[0])
+					if(thisLine[0] != "NULL"):
+						if(skipFileOrder):
+							add_filename(thisLine[1])
+						fileUsed.append(thisLine[1])
 
 	done = False
 	PLAYERNames = []
@@ -836,7 +737,8 @@ if(mode == 2): #Build
 				done = True
 			elif(thisLine != ""):
 				thisLine = thisLine.split(",") #split parameters
-				PLAYERNames.append(thisLine[0])
+				if(check_optimize(optimize, playerUsed, thisLine[0])):
+					PLAYERNames.append(thisLine[0])
 
 	done = False
 	GROUPNames = []
@@ -888,7 +790,56 @@ if(mode == 2): #Build
 			elif(thisLine != ""):
 				thisLine = thisLine.split(",") #split parameters
 				STRMNames.append(thisLine[0])
+				if(thisLine[0] != "NULL"):
+					if(skipFileOrder):
+						add_filename(thisLine[1])
+					fileUsed.append(thisLine[1])
 	infoFile.close() #names of the entries of groups are now stored
+
+	if(blocks == 4 and os.path.exists(sysargv[outfileArg] + "/SymbBlock.txt")):
+		symbFile = open(sysargv[outfileArg] + "/SymbBlock.txt", "r")
+		thisLine = ""
+		seqarcSymbSubNum = 0
+		done = False
+		seqarcSymbSubParent = []
+		seqarcSymbSubName = []
+		mainSEQARCID = -1
+		while(not done):
+			thisLine = symbFile.readline()
+			if not thisLine:
+				done = True
+			thisLine = thisLine.split(";") #ignore anything commented out
+			thisLine = thisLine[0]
+			thisLine = thisLine.split("\n") #remove newline
+			thisLine = thisLine[0]
+			if(thisLine.find("{") == -1): #ignore lines with {
+				if(thisLine.find("}") != -1): #end of section
+					done = True
+				elif(thisLine != ""):
+					if(thisLine[:1] == "\t"): #is a sub string
+						if(mainSEQARCID != -1):
+							seqarcSymbSubName.append(thisLine[1:])
+							seqarcSymbSubParent.append(mainSEQARCID)
+							seqarcSymbSubNum += 1
+					else: #not a sub string
+						tempID = 0
+						done2 = False
+						while(tempID < len(SEQARCNames) and not done2):
+							if(SEQARCNames[tempID] == thisLine):
+								done2 = True
+							else:
+								tempID += 1
+						if(done2):
+							if(mainSEQARCID != -1):
+								seqarcSymbSubCount[mainSEQARCID] = seqarcSymbSubNum
+							mainSEQARCID = tempID
+							seqarcSymbSubNum = 0
+						else:
+							mainSEQARCID = -1
+
+		if(mainSEQARCID != -1):
+			seqarcSymbSubCount[mainSEQARCID] = seqarcSymbSubNum
+		symbFile.close() #symb strings are stored now
 
 	infoFile = open(sysargv[outfileArg] + "/InfoBlock.txt", "r")
 	thisLine = ""
@@ -918,7 +869,7 @@ if(mode == 2): #Build
 					if(len(thisLine) != params):
 						print("\nSEQ wrong number of parameters.\n")
 						quit()
-					thisLine = convert_params(thisLine,[10,0,22,0,0,0,0,0,0])
+					thisLine = convert_params(thisLine,[10,0,22,0,0,0,24,0,0])
 					for i in range(params):
 						seqData.append(thisLine[i])
 					seqNum += 1
@@ -971,19 +922,20 @@ if(mode == 2): #Build
 				done = True
 			elif(thisLine != ""):
 				thisLine = thisLine.split(",") #split parameters
-				if(thisLine[0] == "NULL"):
-					bankData.append("NULL")
-					for i in range(params - 1):
-						bankData.append(0)
-					bankNum += 1
-				else:
-					if(len(thisLine) != params):
-						print("\nBANK wrong number of parameters.\n")
-						quit()
-					thisLine = convert_params(thisLine,[10,0,23,23,23,23])
-					for i in range(params):
-						bankData.append(thisLine[i])
-					bankNum += 1
+				if(check_optimize(optimize, bankUsed, thisLine[0])):
+					if(thisLine[0] == "NULL"):
+						bankData.append("NULL")
+						for i in range(params - 1):
+							bankData.append(0)
+						bankNum += 1
+					else:
+						if(len(thisLine) != params):
+							print("\nBANK wrong number of parameters.\n")
+							quit()
+						thisLine = convert_params(thisLine,[10,0,23,23,23,23])
+						for i in range(params):
+							bankData.append(thisLine[i])
+						bankNum += 1
 
 	wavarcNum = 0
 	done = False
@@ -1002,19 +954,20 @@ if(mode == 2): #Build
 				done = True
 			elif(thisLine != ""):
 				thisLine = thisLine.split(",") #split parameters
-				if(thisLine[0] == "NULL"):
-					wavarcData.append("NULL")
-					for i in range(params - 1):
-						wavarcData.append(0)
-					wavarcNum += 1
-				else:
-					if(len(thisLine) != params):
-						print("\nWAVARC wrong number of parameters.\n")
-						quit()
-					thisLine = convert_params(thisLine,[10,0])
-					for i in range(params):
-						wavarcData.append(thisLine[i])
-					wavarcNum += 1
+				if(check_optimize(optimize, wavearcUsed, thisLine[0])):
+					if(thisLine[0] == "NULL"):
+						wavarcData.append("NULL")
+						for i in range(params - 1):
+							wavarcData.append(0)
+						wavarcNum += 1
+					else:
+						if(len(thisLine) != params):
+							print("\nWAVARC wrong number of parameters.\n")
+							quit()
+						thisLine = convert_params(thisLine,[10,0])
+						for i in range(params):
+							wavarcData.append(thisLine[i])
+						wavarcNum += 1
 
 	playerNum = 0
 	done = False
@@ -1033,19 +986,20 @@ if(mode == 2): #Build
 				done = True
 			elif(thisLine != ""):
 				thisLine = thisLine.split(",") #split parameters
-				if(thisLine[0] == "NULL"):
-					playerData.append("NULL")
-					for i in range(params - 1):
-						playerData.append(0)
-					playerNum += 1
-				else:
-					if(len(thisLine) != params):
-						print("\nPLAYER wrong number of parameters.\n")
-						quit()
-					thisLine = convert_params(thisLine,[0,0,0,0,0])
-					for i in range(params):
-						playerData.append(thisLine[i])
-					playerNum += 1
+				if(check_optimize(optimize, playerUsed, thisLine[0])):
+					if(thisLine[0] == "NULL"):
+						playerData.append("NULL")
+						for i in range(params - 1):
+							playerData.append(0)
+						playerNum += 1
+					else:
+						if(len(thisLine) != params):
+							print("\nPLAYER wrong number of parameters.\n")
+							quit()
+						thisLine = convert_params(thisLine,[0,0,0,0,0])
+						for i in range(params):
+							playerData.append(thisLine[i])
+						playerNum += 1
 
 	groupNum = 0
 	done = False
@@ -1159,14 +1113,14 @@ if(mode == 2): #Build
 
 		seqSymbOffset = len(SDAT)
 		write_long(symbBlockOffset + 8, seqSymbOffset - symbBlockOffset)
-		append_long(seqSymbNum)
-		append_reserve(seqSymbNum * 4)
+		append_long(seqNum)
+		append_reserve(seqNum * 4)
 
 		seqarcSymbOffset = len(SDAT)
 		seqarcSymbSubOffset = []
 		write_long(symbBlockOffset + 12, seqarcSymbOffset - symbBlockOffset)
-		append_long(seqarcSymbNum)
-		append_reserve(seqarcSymbNum * 8) #this has sub-groups
+		append_long(seqarcNum)
+		append_reserve(seqarcNum * 8) #this has sub-groups
 		for i in range(seqarcNum):
 			write_long((seqarcSymbOffset + 8) + (i * 8), len(SDAT) - symbBlockOffset)
 			seqarcSymbSubOffset.append(len(SDAT))
@@ -1175,97 +1129,97 @@ if(mode == 2): #Build
 
 		bankSymbOffset = len(SDAT)
 		write_long(symbBlockOffset + 16, bankSymbOffset - symbBlockOffset)
-		append_long(bankSymbNum)
-		append_reserve(bankSymbNum * 4)
+		append_long(bankNum)
+		append_reserve(bankNum * 4)
 
 		wavarcSymbOffset = len(SDAT)
 		write_long(symbBlockOffset + 20, wavarcSymbOffset - symbBlockOffset)
-		append_long(wavarcSymbNum)
-		append_reserve(wavarcSymbNum * 4)
+		append_long(wavarcNum)
+		append_reserve(wavarcNum * 4)
 
 		playerSymbOffset = len(SDAT)
 		write_long(symbBlockOffset + 24, playerSymbOffset - symbBlockOffset)
-		append_long(playerSymbNum)
-		append_reserve(playerSymbNum * 4)
+		append_long(playerNum)
+		append_reserve(playerNum * 4)
 
 		groupSymbOffset = len(SDAT)
 		write_long(symbBlockOffset + 28, groupSymbOffset - symbBlockOffset)
-		append_long(groupSymbNum)
-		append_reserve(groupSymbNum * 4)
+		append_long(groupNum)
+		append_reserve(groupNum * 4)
 
 		player2SymbOffset = len(SDAT)
 		write_long(symbBlockOffset + 32, player2SymbOffset - symbBlockOffset)
-		append_long(player2SymbNum)
-		append_reserve(player2SymbNum * 4)
+		append_long(player2Num)
+		append_reserve(player2Num * 4)
 
 		strmSymbOffset = len(SDAT)
 		write_long(symbBlockOffset + 36, strmSymbOffset - symbBlockOffset)
-		append_long(strmSymbNum)
-		append_reserve(strmSymbNum * 4)
+		append_long(strmNum)
+		append_reserve(strmNum * 4)
 
-		for i in range(seqSymbNum):
-			if(seqSymbName[i] != "NULL"):
+		for i in range(seqNum):
+			if(SEQNames[i] != "NULL"):
 				write_long((seqSymbOffset + 4) + (i * 4), len(SDAT) - symbBlockOffset)
-				for ii in range(len(seqSymbName[i])):
-					append_byte(ord(seqSymbName[i][ii]))
+				for ii in range(len(SEQNames[i])):
+					append_byte(ord(SEQNames[i][ii]))
 				append_byte(0) #terminate string
 
-		curSeqarc = 0
-		for i in range(seqarcSymbNum):
-			if(seqarcSymbName[curSeqarc] != "NULL"):
+		for i in range(seqarcNum):
+			if(SEQARCNames[i] != "NULL"):
 				write_long((seqarcSymbOffset + 4) + (i * 8), len(SDAT) - symbBlockOffset)
-				for ii in range(len(seqarcSymbName[curSeqarc])):
-					append_byte(ord(seqarcSymbName[curSeqarc][ii]))
+				for ii in range(len(SEQARCNames[i])):
+					append_byte(ord(SEQARCNames[i][ii]))
 				append_byte(0) #terminate string
-			curSeqarc += 1
-			for subi in range(seqarcSymbSubCount[i]):
-				if(seqarcSymbName[curSeqarc] != "NULL"):
-					write_long((seqarcSymbSubOffset[i] + 4) + (subi * 4), len(SDAT) - symbBlockOffset)
-					for ii in range(len(seqarcSymbName[curSeqarc])):
-						append_byte(ord(seqarcSymbName[curSeqarc][ii]))
-					append_byte(0) #terminate string
-				curSeqarc += 1
+				curSeqarcSub = 0
+				for subi in range(len(seqarcSymbSubName)):
+					if(seqarcSymbSubParent[subi] == i):
+						if(seqarcSymbSubName[subi] != "NULL"):
+							write_long((seqarcSymbSubOffset[i] + 4) + (curSeqarcSub * 4), len(SDAT) - symbBlockOffset)
+							for ii in range(len(seqarcSymbSubName[subi])):
+								append_byte(ord(seqarcSymbSubName[subi][ii]))
+							append_byte(0) #terminate string
+						curSeqarcSub += 1
 
-		for i in range(bankSymbNum):
-			if(bankSymbName[i] != "NULL"):
+		for i in range(bankNum):
+			if(BANKNames[i] != "NULL"):
 				write_long((bankSymbOffset + 4) + (i * 4), len(SDAT) - symbBlockOffset)
-				for ii in range(len(bankSymbName[i])):
-					append_byte(ord(bankSymbName[i][ii]))
+				for ii in range(len(BANKNames[i])):
+					append_byte(ord(BANKNames[i][ii]))
 				append_byte(0) #terminate string
 
-		for i in range(wavarcSymbNum):
-			if(wavarcSymbName[i] != "NULL"):
+		for i in range(wavarcNum):
+			if(WAVEARCNames[i] != "NULL"):
 				write_long((wavarcSymbOffset + 4) + (i * 4), len(SDAT) - symbBlockOffset)
-				for ii in range(len(wavarcSymbName[i])):
-					append_byte(ord(wavarcSymbName[i][ii]))
+				for ii in range(len(WAVEARCNames[i])):
+					append_byte(ord(WAVEARCNames[i][ii]))
 				append_byte(0) #terminate string
 
-		for i in range(playerSymbNum):
-			if(playerSymbName[i] != "NULL"):
+		for i in range(playerNum):
+			if(PLAYERNames[i] != "NULL"):
 				write_long((playerSymbOffset + 4) + (i * 4), len(SDAT) - symbBlockOffset)
-				for ii in range(len(playerSymbName[i])):
-					append_byte(ord(playerSymbName[i][ii]))
+				for ii in range(len(PLAYERNames[i])):
+					append_byte(ord(PLAYERNames[i][ii]))
 				append_byte(0) #terminate string
 
-		for i in range(groupSymbNum):
-			if(groupSymbName[i] != "NULL"):
+		for i in range(groupNum):
+			if(GROUPNames[i] != "NULL"):
 				write_long((groupSymbOffset + 4) + (i * 4), len(SDAT) - symbBlockOffset)
-				for ii in range(len(groupSymbName[i])):
-					append_byte(ord(groupSymbName[i][ii]))
+				for ii in range(len(GROUPNames[i])):
+					append_byte(ord(GROUPNames[i][ii]))
 				append_byte(0) #terminate string
 
-		for i in range(player2SymbNum):
-			if(player2SymbName[i] != "NULL"):
+		for i in range(player2Num):
+			if(PLAYER2Names[i] != "NULL"):
 				write_long((player2SymbOffset + 4) + (i * 4), len(SDAT) - symbBlockOffset)
-				for ii in range(len(player2SymbName[i])):
-					append_byte(ord(player2SymbName[i][ii]))
+				for ii in range(len(PLAYER2Names[i])):
+					append_byte(ord(PLAYER2Names[i][ii]))
 				append_byte(0) #terminate string
 
-		for i in range(strmSymbNum):
-			if(strmSymbName[i] != "NULL"):
+		for i in range(strmNum):
+			if(STRMNames[i] != "NULL"):
 				write_long((strmSymbOffset + 4) + (i * 4), len(SDAT) - symbBlockOffset)
-				for ii in range(len(strmSymbName[i])):
-					append_byte(ord(strmSymbName[i][ii]))
+				for ii in range(len(STRMNames[i])):
+					append_byte(ord(STRMNames[i][ii]))
 				append_byte(0) #terminate string
 
 		write_long(16, symbBlockOffset)
