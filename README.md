@@ -1,5 +1,5 @@
 # SDATTool
-By FroggestSpirit Version 0.0.4
+By FroggestSpirit Version 0.0.5
 
 Unpack/Pack NDS SDAT Files
 
@@ -26,6 +26,10 @@ Flags:
 If only a SDAT file is provided, the output directory will be the same as the SDAT, with a new folder created. This will unpack to that folder. Similarly, the SDAT can be rebuilt from the same folder name if only the SDAT filename is provided with mode -b
 
 Un-edited rebuilt SDAT files should be 1:1, if an SDAT is ripped from a game, decompiled and rebuilt, without being 1:1, please let me know.
+
+New in version 0.0.5:
+
+-Code is cleaned up more
 
 New in version 0.0.4:
 
