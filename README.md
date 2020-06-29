@@ -1,5 +1,5 @@
 # SDATTool
-By FroggestSpirit Version 0.0.6
+By FroggestSpirit Version 0.7.0
 
 Unpack/Pack NDS SDAT Files
 
@@ -32,10 +32,8 @@ Un-edited rebuilt SDAT files should be 1:1, if an SDAT is ripped from a game, de
 Un-edited rebuilt SDAT files using the -o flag should work normally in-game, if not please let me know.
 
 
-New in version 0.0.6:
+New in version 0.7.0:
 
 -Code is cleaned up more
 
--Optimization now removes duplicate files based on MD5. This is the only optimization applied with this flag and should work in-game
-
--remove unused flag added (the old optimization flag). This was found to break compatibility in some games, but can be used for music players. This will also apply the MD5 check automatically
+-Unpacking and building are now dramatically faster
