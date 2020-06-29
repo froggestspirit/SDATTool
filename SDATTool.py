@@ -1,5 +1,5 @@
 #SDAT-Tool by FroggestSpirit
-version = "0.0.5"
+version = "0.0.6"
 #Unpacks and builds SDAT files
 #Make backups, this can overwrite files without confirmation
 
@@ -33,6 +33,9 @@ names = {}
 namesUsed = {}
 fileType = []
 fileNameID = []
+fileMD5 = []
+fileAll = []
+fileAllMD5 = []
 
 SDAT = []
 
@@ -43,47 +46,54 @@ def read_short(pos):
 	return (SDAT[pos + 1] * 0x100) + SDAT[pos]
 	
 def add_fileName(name):
-	exists = False
-	for i in range(len(names[FILE])):
-		if(names[FILE][i] == name):
-			exists = True
-			i = len(names[FILE])
-	if(not exists):
-		names[FILE].append(name)
-		itemCount[FILE] += 1
+	if(name not in names[FILE]):
+		if(optimize):
+			tempFile = open(sysargv[outfileArg] + "/Files/" + name, "rb")
+			tFileBuffer = []
+			tFileBuffer = tempFile.read()
+			tempFile.close()
+			thisMD5 = hashlib.md5(tFileBuffer)
+			fileAll.append(name)
+			fileAllMD5.append(thisMD5.hexdigest())
+			if(thisMD5.hexdigest() not in fileMD5):
+				itemCount[FILE] += 1
+				fileMD5.append(thisMD5.hexdigest())
+				names[FILE].append(name)
+		else:
+			itemCount[FILE] += 1
+			names[FILE].append(name)
 
-def check_optimize(optimizeFlag, item, string): #return true to add the item, return false to skip it (unused)
-	if(not optimizeFlag): #skip this if the build is not optimized
-		return True
-	if(item == SEQ or item == SEQARC or item == GROUP or item == PLAYER2 or item == STRM): #None of these get referenced from other items(?), so they should all be included
+def check_unused(removeFlag, item, string): #return true to add the item, return false to skip it (unused)
+	if(not removeFlag): #skip this if the build is removing unused entries
 		return True
 	if(string == "NULL"): #skip item if null
 		return False
-	for i in range(len(namesUsed[item])):
-		if(namesUsed[item][i] == string):
-			return True
+	if(item == SEQ or item == SEQARC or item == GROUP or item == PLAYER2 or item == STRM): #None of these get referenced from other items(?), so they should all be included
+		return True
+	if(string in namesUsed[item]):
+		return True
 	return False
 
 def get_params(list):
 	global SDATPos
 	retString = ""
-	for i in range(len(list)):
+	for i, listItem in enumerate(list):
 		tempString = ""
 		if(i > 0):
 			retString += ","
-		if(list[i] == BYTE):
+		if(listItem == BYTE):
 			tempString = str(SDAT[SDATPos])
 			retString += tempString
 			SDATPos += 1
-		elif (list[i] == SHORT):
+		elif (listItem == SHORT):
 			tempString = str(read_short(SDATPos))
 			retString += tempString
 			SDATPos += 2
-		elif (list[i] == LONG):
+		elif (listItem == LONG):
 			tempString = str(read_long(SDATPos))
 			retString += tempString
 			SDATPos += 4
-		elif (list[i] == FILE): #point to the file name
+		elif (listItem == FILE): #point to the file name
 			tempID = read_short(SDATPos)
 			matchID = 0
 			done = False
@@ -95,32 +105,49 @@ def get_params(list):
 			retString += names[FILE][matchID] + fileType[matchID]
 			SDATPos += 2
 		else: #point to the name of the item
-			if(read_short(SDATPos) < len(names[list[i]])):
-				retString += names[list[i]][read_short(SDATPos)]
+			if(read_short(SDATPos) < len(names[listItem])):
+				retString += names[listItem][read_short(SDATPos)]
 			else:
-				if(read_short(SDATPos) == 65535 and list[i] == WAVARC): #unused wavarc slot
+				if(read_short(SDATPos) == 65535 and listItem == WAVARC): #unused wavarc slot
 					retString += "NULL"
 				else:
-					retString += itemString[list[i]] + "_" + str(read_short(SDATPos))
+					retString += itemString[listItem] + "_" + str(read_short(SDATPos))
 			SDATPos += 2
-			if(list[i] == PLAYER):
+			if(listItem == PLAYER):
 				SDATPos -= 1
 	return retString
 
 def convert_params(tArray,list):
 	retList = []
 	retList.append(tArray[0])
-	for i in range(len(list)):
-		if(list[i] <= BYTE): #convert to integer
+	for i, listItem in enumerate(list):
+		if(listItem <= BYTE): #convert to integer
 			retList.append(int(tArray[i + 1]))
+		elif(listItem == FILE and optimize): #check file MD5 for duplicates
+			matchID = 0
+			done = False
+			while(matchID < len(fileAll) and not done):
+				if(fileAll[matchID] == tArray[i + 1]):
+					done = True
+				else:
+					matchID += 1
+			tempMD5 = fileAllMD5[matchID]
+			matchID2 = 0
+			done = False
+			while(matchID2 < len(fileMD5) and not done):
+				if(fileMD5[matchID2] == tempMD5):
+					done = True
+				else:
+					matchID2 += 1
+			retList.append(matchID2)
 		else: #reference item by string
 			matchID = 0
 			done = False
-			if(tArray[i + 1] == "NULL" and list[i] == WAVARC): #unused bank
+			if(tArray[i + 1] == "NULL" and listItem == WAVARC): #unused bank
 				done = True
 				matchID = 65535
-			while(matchID < len(names[list[i]]) and not done):
-				if(names[list[i]][matchID] == tArray[i + 1]):
+			while(matchID < len(names[listItem]) and not done):
+				if(names[listItem][matchID] == tArray[i + 1]):
 					done = True
 				else:
 					matchID += 1
@@ -128,18 +155,18 @@ def convert_params(tArray,list):
 	return retList
 
 def append_list(list): #append a list of bytes to SDAT
-	for i in range(len(list)):
-		SDAT.append(list[i])
+	for i, listItem in enumerate(list):
+		SDAT.append(listItem)
 
 def append_reserve(x): #append a number of 0x00 bytes to SDAT
 	for i in range(x):
 		SDAT.append(0)
 
 def append_params(item,index,list): #append paramerters of an item to SDAT
-	for i in range(len(list)):
-		if(list[i] == BYTE or list[i] == PLAYER): #parameter is an 8-bit write
+	for i, listItem in enumerate(list):
+		if(listItem == BYTE or listItem == PLAYER): #parameter is an 8-bit write
 			append_byte(itemData[item][index + i + 1])
-		elif(list[i] == LONG): #parameter is a 32-bit write
+		elif(listItem == LONG): #parameter is a 32-bit write
 			append_long(itemData[item][index + i + 1])
 		else: #parameter is a 16-bit write
 			append_short(itemData[item][index + i + 1])
@@ -198,6 +225,7 @@ calcMD5 = False
 optimize = False
 skipSymbBlock = False
 skipFileOrder = False
+removeUnused = False
 
 for i in range(9):
 	names[i] = []
@@ -248,21 +276,25 @@ itemExt[STRM] = ".strm"
 print("SDAT-Tool " + version + "\n")
 infileArg = -1;
 outfileArg = -1;
-for i in range(len(sysargv)):
+for i, argument in enumerate(sysargv):
 	if(i > 0):
-		if(sysargv[i].startswith("-")):
-			if(sysargv[i] == "-u" or sysargv[i] == "--unpack"):
+		if(argument.startswith("-")):
+			if(argument == "-u" or argument == "--unpack"):
 				mode = 1
-			elif(sysargv[i] == "-b" or sysargv[i] == "--build"):
+			elif(argument == "-b" or argument == "--build"):
 				mode = 2
-			elif(sysargv[i] == "-h" or sysargv[i] == "--help"):
+			elif(argument == "-h" or argument == "--help"):
 				mode = 0
-			elif(sysargv[i] == "-m" or sysargv[i] == "--md5"):
+			elif(argument == "-m" or argument == "--md5"):
 				calcMD5 = True
-			elif(sysargv[i] == "-o" or sysargv[i] == "--optimize"):
+			elif(argument == "-o" or argument == "--optimize"):
 				optimize = True
 				skipFileOrder = True
-			elif(sysargv[i] == "-ns" or sysargv[i] == "--noSymbBlock"):
+			elif(argument == "-ru" or argument == "--removeUnused"):
+				optimize = True
+				skipFileOrder = True
+				removeUnused = True
+			elif(argument == "-ns" or argument == "--noSymbBlock"):
 				skipSymbBlock = True
 		else:
 			if(infileArg == -1): infileArg=i
@@ -283,7 +315,7 @@ else:
 			print("Input and output files cannot be the same")
 			sys.exit()
 if(mode == 0): #Help
-	print("Usage: "+sysargv[0]+" [SDAT File] [mode] [SDAT Folder] [flags]\nMode:\n\t-b\tBuild SDAT\n\t-u\tUnpack SDAT\n\t-h\tShow this help message\n\nFlags:\n\t-m\tCalculate file MD5 when unpacking\n\t-o\tBuild Optimized\n\t-ns\tBuild without a SymbBlock\n")
+	print("Usage: "+sysargv[0]+" [SDAT File] [mode] [SDAT Folder] [flags]\nMode:\n\t-b\tBuild SDAT\n\t-u\tUnpack SDAT\n\t-h\tShow this help message\n\nFlags:\n\t-m\tCalculate file MD5 when unpacking\n\t-o\tBuild Optimized\n\t-ru\tBuild without unused entries (can break games)\n\t-ns\tBuild without a SymbBlock\n")
 	sys.exit()
 
 if(mode == 1): #Unpack
@@ -413,8 +445,8 @@ if(mode == 1): #Unpack
 			SDATPos += 1
 			outfile.write(tempFile[ii].to_bytes(1,byteorder='little'))
 		if(calcMD5):
-			fileMD5 = hashlib.md5(tempFileString.encode())
-			IDFile.write(";MD5 = " + fileMD5.hexdigest())
+			thisMD5 = hashlib.md5(tempFileString.encode())
+			IDFile.write(";MD5 = " + thisMD5.hexdigest())
 		IDFile.write("\n")
 	IDFile.close()
 
@@ -464,16 +496,16 @@ if(mode == 2): #Build
 					done = True
 				elif(thisLine != ""):
 					thisLine = thisLine.split(",") #split parameters
-					if(check_optimize(optimize, i, thisLine[0])):
+					if(check_unused(removeUnused, i, thisLine[0])):
 						names[i].append(thisLine[0])
 						if(i == SEQARC):
 							seqarcSymbSubCount.append(0)
 						if(thisLine[0] != "NULL"):
 							if(skipFileOrder and itemParams[i][0] == FILE):
 								add_fileName(thisLine[1])
-							for ii in range(len(itemParams[i])):
-								if(itemParams[i][ii] >= 0):
-									namesUsed[itemParams[i][ii]].append(thisLine[ii + 1])
+							for ii, param in enumerate(itemParams[i]):
+								if(param >= 0):
+									namesUsed[param].append(thisLine[ii + 1])
 
 	infoFile.close() #names of the entries of groups are now stored
 
@@ -539,7 +571,7 @@ if(mode == 2): #Build
 					done = True
 				elif(thisLine != ""):
 					thisLine = thisLine.split(",") #split parameters
-					if(check_optimize(optimize, i, thisLine[0])):
+					if(check_unused(removeUnused, i, thisLine[0])):
 						if(thisLine[0] == "NULL"):
 							itemData[i].append("NULL")
 							for ii in range(params - 1):
@@ -598,23 +630,23 @@ if(mode == 2): #Build
 				for ii in range(itemCount[i]):
 					if(names[i][ii] != "NULL"):
 						write_long((itemSymbOffset[i] + 4) + (ii * 4), len(SDAT) - symbBlockOffset)
-						for x in range(len(names[i][ii])):
-							append_byte(ord(names[i][ii][x]))
+						for x, character in enumerate(names[i][ii]):
+							append_byte(ord(character))
 						append_byte(0) #terminate string
 			else:
 				for ii in range(itemCount[i]):
 					if(names[i][ii] != "NULL"):
 						write_long((itemSymbOffset[i] + 4) + (ii * 8), len(SDAT) - symbBlockOffset)
-						for x in range(len(names[i][ii])):
-							append_byte(ord(names[i][ii][x]))
+						for x, character in enumerate(names[i][ii]):
+							append_byte(ord(character))
 						append_byte(0) #terminate string
 						curSeqarcSub = 0
-						for subi in range(len(seqarcSymbSubName)):
+						for subi, name in enumerate(seqarcSymbSubName):
 							if(seqarcSymbSubParent[subi] == ii):
-								if(seqarcSymbSubName[subi] != "NULL"):
+								if(name != "NULL"):
 									write_long((seqarcSymbSubOffset[ii] + 4) + (curSeqarcSub * 4), len(SDAT) - symbBlockOffset)
-									for x in range(len(seqarcSymbSubName[subi])):
-										append_byte(ord(seqarcSymbSubName[subi][x]))
+									for x, character in enumerate(name):
+										append_byte(ord(character))
 									append_byte(0) #terminate string
 								curSeqarcSub += 1
 
@@ -691,19 +723,20 @@ if(mode == 2): #Build
 		append_reserve(1) #pad to the nearest 0x20 byte alignment
 
 	curFile = 0
-	for i in range(len(names[FILE])):
-		if not os.path.exists(sysargv[outfileArg] + "/Files/" + names[FILE][i]):
-			print("\nMissing File:'" + sysargv[outfileArg] + "/Files/" + names[FILE][i] + "'\n")
+	for i, fName in enumerate(names[FILE]):
+		if not os.path.exists(sysargv[outfileArg] + "/Files/" + fName):
+			print("\nMissing File:'" + sysargv[outfileArg] + "/Files/" + fName + "'\n")
 			quit()
 		curFileLoc = len(SDAT)
 		write_long((curFile * 16) + 12 + fatBlockOffset,curFileLoc) #write file pointer to the fatBlock
-		tempFile = open(sysargv[outfileArg] + "/Files/" + names[FILE][i], "rb")
+		tempFile = open(sysargv[outfileArg] + "/Files/" + fName, "rb")
 		tFileBuffer = []
 		tFileBuffer = tempFile.read()
 		tempFile.close()
+
 		write_long((curFile * 16) + 16 + fatBlockOffset,len(tFileBuffer))#write file size to the fatBlock
-		for ii in range(len(tFileBuffer)):
-			append_byte(tFileBuffer[ii])
+		for ii, character in enumerate(tFileBuffer):
+			append_byte(character)
 		while((len(SDAT) & 0xFFFFFFE0) != len(SDAT)):
 			append_reserve(1) #pad to the nearest 0x20 byte alignment
 		curFile += 1
@@ -714,6 +747,6 @@ if(mode == 2): #Build
 	write_long(8, len(SDAT)) #write file size
 
 	outfile = open(sysargv[infileArg],"wb")
-	for i in range(len(SDAT)):
-		outfile.write(SDAT[i].to_bytes(1,byteorder='little'))
+	for i, character in enumerate(SDAT):
+		outfile.write(character.to_bytes(1,byteorder='little'))
 	outfile.close()
