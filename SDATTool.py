@@ -1,5 +1,5 @@
 #SDAT-Tool by FroggestSpirit
-version = "0.0.6"
+version = "0.7.0"
 #Unpacks and builds SDAT files
 #Make backups, this can overwrite files without confirmation
 
@@ -7,6 +7,7 @@ import sys
 import os
 import math
 import hashlib
+import time
 
 LONG = -4
 SHORT = -2
@@ -74,10 +75,10 @@ def check_unused(removeFlag, item, string): #return true to add the item, return
 		return True
 	return False
 
-def get_params(list):
+def get_params(tList):
 	global SDATPos
 	retString = ""
-	for i, listItem in enumerate(list):
+	for i, listItem in enumerate(tList):
 		tempString = ""
 		if(i > 0):
 			retString += ","
@@ -117,10 +118,10 @@ def get_params(list):
 				SDATPos -= 1
 	return retString
 
-def convert_params(tArray,list):
+def convert_params(tArray,tList):
 	retList = []
 	retList.append(tArray[0])
-	for i, listItem in enumerate(list):
+	for i, listItem in enumerate(tList):
 		if(listItem <= BYTE): #convert to integer
 			retList.append(int(tArray[i + 1]))
 		elif(listItem == FILE and optimize): #check file MD5 for duplicates
@@ -154,16 +155,16 @@ def convert_params(tArray,list):
 			retList.append(matchID)
 	return retList
 
-def append_list(list): #append a list of bytes to SDAT
-	for i, listItem in enumerate(list):
+def append_list(tList): #append a list of bytes to SDAT
+	for i, listItem in enumerate(tList):
 		SDAT.append(listItem)
 
 def append_reserve(x): #append a number of 0x00 bytes to SDAT
 	for i in range(x):
 		SDAT.append(0)
 
-def append_params(item,index,list): #append paramerters of an item to SDAT
-	for i, listItem in enumerate(list):
+def append_params(item,index,tList): #append paramerters of an item to SDAT
+	for i, listItem in enumerate(tList):
 		if(listItem == BYTE or listItem == PLAYER): #parameter is an 8-bit write
 			append_byte(itemData[item][index + i + 1])
 		elif(listItem == LONG): #parameter is a 32-bit write
@@ -218,6 +219,7 @@ def get_string():
 		SDATPos += 1
 	return retString
 	
+ts = time.time()
 sysargv = sys.argv
 echo = True
 mode = 0
@@ -273,7 +275,7 @@ itemExt[BANK] = ".sbnk"
 itemExt[WAVARC] = ".swar"
 itemExt[STRM] = ".strm"
 
-print("SDAT-Tool " + version + "\n")
+print("SDAT-Tool " + version)
 infileArg = -1;
 outfileArg = -1;
 for i, argument in enumerate(sysargv):
@@ -319,6 +321,7 @@ if(mode == 0): #Help
 	sys.exit()
 
 if(mode == 1): #Unpack
+	print("Unpacking...")
 	if not os.path.exists(sysargv[outfileArg]):
 		os.makedirs(sysargv[outfileArg])
 	infile = open(sysargv[infileArg], "rb")
@@ -399,7 +402,7 @@ if(mode == 1): #Unpack
 					iName = names[i][ii]
 				else:
 					iName = itemString[i] + "_" + str(ii)
-				if(i == SEQ or i == SEQARC or i == BANK or i == WAVARC or i == STRM): #These have files
+				if(i in (SEQ, SEQARC, BANK, WAVARC, STRM)): #These have files
 					fileType.append(itemExt[i])
 					fileNameID.append(read_short(SDATPos))
 					names[FILE].append(iName)
@@ -423,8 +426,6 @@ if(mode == 1): #Unpack
 	for i in range(entries):
 		SDATPos = read_long(fatOffset + 12 + (i * 16))
 		tempSize = read_long(fatOffset + 16 + (i * 16))
-		tempFile = []
-		tempFileString = ""
 		done = False
 		fileRefID = 0
 		while(fileNameID[fileRefID] != i and not done):
@@ -438,19 +439,19 @@ if(mode == 1): #Unpack
 		else:
 			outfile = open(sysargv[outfileArg] + "/Files/" + names[FILE][fileRefID] + fileType[fileRefID],"wb")
 			IDFile.write(names[FILE][fileRefID] + fileType[fileRefID])
-		for ii in range(tempSize):
-			tempFile.append(SDAT[SDATPos])
-			if(calcMD5):
-				tempFileString += str(SDAT[SDATPos])
-			SDATPos += 1
-			outfile.write(tempFile[ii].to_bytes(1,byteorder='little'))
+		outfile.write(SDAT[SDATPos:SDATPos+tempSize])
+		tempFileString = SDAT[SDATPos:SDATPos+tempSize]
 		if(calcMD5):
-			thisMD5 = hashlib.md5(tempFileString.encode())
+			thisMD5 = hashlib.md5(tempFileString)
 			IDFile.write(";MD5 = " + thisMD5.hexdigest())
 		IDFile.write("\n")
+		outfile.close()
 	IDFile.close()
+	ts2 = time.time() - ts
+	print("Done: " + str(ts2) + "s")
 
 if(mode == 2): #Build
+	print("Building...")
 	blocks = 4
 	if(skipSymbBlock):
 		blocks = 3	
@@ -580,8 +581,8 @@ if(mode == 2): #Build
 						else:
 							if(i == GROUP):
 								params = (int(thisLine[1]) * 2) + 2
-								for ii in range(len(thisLine) - 1):
-									thisLine[ii + 1] = int(thisLine[ii + 1]) #convert ID to an integer
+								for ii, number in enumerate(thisLine[1:]):
+									thisLine[ii + 1] = int(number) #convert ID to an integer
 							if(len(thisLine) != params):
 								print("\n" + itemString[i] + " wrong number of parameters.\n")
 								quit()
@@ -723,30 +724,32 @@ if(mode == 2): #Build
 		append_reserve(1) #pad to the nearest 0x20 byte alignment
 
 	curFile = 0
+	tFileBuffer = []
 	for i, fName in enumerate(names[FILE]):
 		if not os.path.exists(sysargv[outfileArg] + "/Files/" + fName):
 			print("\nMissing File:'" + sysargv[outfileArg] + "/Files/" + fName + "'\n")
 			quit()
-		curFileLoc = len(SDAT)
+		curFileLoc = (len(SDAT) + sum(len(tf) for tf in tFileBuffer))
 		write_long((curFile * 16) + 12 + fatBlockOffset,curFileLoc) #write file pointer to the fatBlock
 		tempFile = open(sysargv[outfileArg] + "/Files/" + fName, "rb")
-		tFileBuffer = []
-		tFileBuffer = tempFile.read()
+		tFileBuffer.append(tempFile.read())
+		write_long((curFile * 16) + 16 + fatBlockOffset,len(tFileBuffer[curFile]))#write file size to the fatBlock
 		tempFile.close()
 
-		write_long((curFile * 16) + 16 + fatBlockOffset,len(tFileBuffer))#write file size to the fatBlock
-		for ii, character in enumerate(tFileBuffer):
-			append_byte(character)
-		while((len(SDAT) & 0xFFFFFFE0) != len(SDAT)):
-			append_reserve(1) #pad to the nearest 0x20 byte alignment
+		while((len(tFileBuffer[curFile]) & 0xFFFFFFE0) != len(tFileBuffer[curFile])):
+			tFileBuffer[curFile] += b'\x00' #pad to the nearest 0x20 byte alignment
 		curFile += 1
 	write_long(16 + (headeri * 8), fileBlockOffset)
-	write_long(20 + (headeri * 8), len(SDAT) - fileBlockOffset)
-	write_long(fileBlockOffset + 4,len(SDAT) - fileBlockOffset) #write fileBlock size
+	write_long(20 + (headeri * 8), (len(SDAT) + sum(len(tf) for tf in tFileBuffer)) - fileBlockOffset)
+	write_long(fileBlockOffset + 4, (len(SDAT) + sum(len(tf) for tf in tFileBuffer)) - fileBlockOffset) #write fileBlock size
 	
-	write_long(8, len(SDAT)) #write file size
+	write_long(8, (len(SDAT) + sum(len(tf) for tf in tFileBuffer))) #write file size
 
 	outfile = open(sysargv[infileArg],"wb")
 	for i, character in enumerate(SDAT):
 		outfile.write(character.to_bytes(1,byteorder='little'))
+	for i, tFile in enumerate(tFileBuffer):
+		outfile.write(tFile)
 	outfile.close()
+	ts2 = time.time() - ts
+	print("Done: " + str(ts2) + "s")
