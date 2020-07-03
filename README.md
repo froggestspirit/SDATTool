@@ -1,5 +1,5 @@
 # SDATTool
-By FroggestSpirit Version 0.7.0
+By FroggestSpirit Version 0.8.0
 
 Unpack/Pack NDS SDAT Files
 
@@ -32,8 +32,7 @@ Un-edited rebuilt SDAT files should be 1:1, if an SDAT is ripped from a game, de
 Un-edited rebuilt SDAT files using the -o flag should work normally in-game, if not please let me know.
 
 
-New in version 0.7.0:
+New in version 0.8.0:
 
--Code is cleaned up more
+-SWAR files now unpack in their own directory as SWAVs. Building will look for a built SWAR first, then if not found, build the SWAR from the SWAVs
 
--Unpacking and building are now dramatically faster
