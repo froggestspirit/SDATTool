@@ -1,5 +1,5 @@
 #SDAT-Tool by FroggestSpirit
-version = "0.7.0"
+version = "0.8.0"
 #Unpacks and builds SDAT files
 #Make backups, this can overwrite files without confirmation
 
@@ -25,6 +25,7 @@ FILE = 8
 itemString = []
 itemParamString = []
 itemExt = []
+itemHeader = []
 itemParams = []
 itemOffset = []
 itemSymbOffset = []
@@ -49,16 +50,26 @@ def read_short(pos):
 def add_fileName(name):
 	if(name not in names[FILE]):
 		if(optimize):
-			tempFile = open(sysargv[outfileArg] + "/Files/" + name, "rb")
-			tFileBuffer = []
-			tFileBuffer = tempFile.read()
-			tempFile.close()
-			thisMD5 = hashlib.md5(tFileBuffer)
-			fileAll.append(name)
-			fileAllMD5.append(thisMD5.hexdigest())
-			if(thisMD5.hexdigest() not in fileMD5):
+			testPath = sysargv[outfileArg] + "/Files/" + itemString[itemExt.index(name[-5:])] + "/" + name
+			if not os.path.exists(testPath):
+				testPath = sysargv[outfileArg] + "/Files/" + name
+			if os.path.exists(testPath):
+				tempFile = open(testPath, "rb")
+				tFileBuffer = []
+				tFileBuffer = tempFile.read()
+				tempFile.close()
+				thisMD5 = hashlib.md5(tFileBuffer)
+				fileAll.append(name)
+				fileAllMD5.append(thisMD5.hexdigest())
+				if(thisMD5.hexdigest() not in fileMD5):
+					itemCount[FILE] += 1
+					fileMD5.append(thisMD5.hexdigest())
+					names[FILE].append(name)
+			else:#can't calculate MD5
+				fileAll.append(name)
+				fileAllMD5.append(itemCount[FILE])
+				fileMD5.append(itemCount[FILE])
 				itemCount[FILE] += 1
-				fileMD5.append(thisMD5.hexdigest())
 				names[FILE].append(name)
 		else:
 			itemCount[FILE] += 1
@@ -69,7 +80,7 @@ def check_unused(removeFlag, item, string): #return true to add the item, return
 		return True
 	if(string == "NULL"): #skip item if null
 		return False
-	if(item == SEQ or item == SEQARC or item == GROUP or item == PLAYER2 or item == STRM): #None of these get referenced from other items(?), so they should all be included
+	if(item in (SEQ, SEQARC, GROUP, PLAYER2, STRM)): #None of these get referenced from other items(?), so they should all be included
 		return True
 	if(string in namesUsed[item]):
 		return True
@@ -103,7 +114,7 @@ def get_params(tList):
 					done = True
 				else:
 					matchID += 1
-			retString += names[FILE][matchID] + fileType[matchID]
+			retString += names[FILE][matchID] + itemExt[fileType[matchID]]
 			SDATPos += 2
 		else: #point to the name of the item
 			if(read_short(SDATPos) < len(names[listItem])):
@@ -237,6 +248,7 @@ for i in range(9):
 	itemString.append("")
 	itemParamString.append("")
 	itemExt.append("")
+	itemHeader.append("")
 	itemCount.append(0)
 	itemOffset.append(0)
 	itemSymbOffset.append(0)
@@ -274,6 +286,12 @@ itemExt[SEQARC] = ".ssar"
 itemExt[BANK] = ".sbnk"
 itemExt[WAVARC] = ".swar"
 itemExt[STRM] = ".strm"
+
+itemHeader[SEQ] = "SSEQ"
+itemHeader[SEQARC] = "SSAR"
+itemHeader[BANK] = "SBNK"
+itemHeader[WAVARC] = "SWAR"
+itemHeader[STRM] = "STRM"
 
 print("SDAT-Tool " + version)
 infileArg = -1;
@@ -403,7 +421,7 @@ if(mode == 1): #Unpack
 				else:
 					iName = itemString[i] + "_" + str(ii)
 				if(i in (SEQ, SEQARC, BANK, WAVARC, STRM)): #These have files
-					fileType.append(itemExt[i])
+					fileType.append(i)
 					fileNameID.append(read_short(SDATPos))
 					names[FILE].append(iName)
 				outfile.write(iName + "," + get_params(itemParams[i]))
@@ -423,29 +441,69 @@ if(mode == 1): #Unpack
 	IDFile = open(sysargv[outfileArg] + "/FileID.txt","w")
 	if not os.path.exists(sysargv[outfileArg] + "/Files"):
 		os.makedirs(sysargv[outfileArg] + "/Files")
+	if not os.path.exists(sysargv[outfileArg] + "/Files/" + itemString[0]):
+		os.makedirs(sysargv[outfileArg] + "/Files/" + itemString[0])
+	if not os.path.exists(sysargv[outfileArg] + "/Files/" + itemString[1]):
+		os.makedirs(sysargv[outfileArg] + "/Files/" + itemString[1])
+	if not os.path.exists(sysargv[outfileArg] + "/Files/" + itemString[2]):
+		os.makedirs(sysargv[outfileArg] + "/Files/" + itemString[2])
+	if not os.path.exists(sysargv[outfileArg] + "/Files/" + itemString[3]):
+		os.makedirs(sysargv[outfileArg] + "/Files/" + itemString[3])
+	if not os.path.exists(sysargv[outfileArg] + "/Files/" + itemString[7]):
+		os.makedirs(sysargv[outfileArg] + "/Files/" + itemString[7])
 	for i in range(entries):
 		SDATPos = read_long(fatOffset + 12 + (i * 16))
 		tempSize = read_long(fatOffset + 16 + (i * 16))
 		done = False
 		fileRefID = 0
+		fileHeader = str(SDAT[SDATPos:SDATPos+4])[2:6]
+		if(fileHeader in itemHeader):
+			tempPath = sysargv[outfileArg] + "/Files/" + itemString[itemHeader.index(fileHeader)] + "/" + "unknown_" + str(i)
+			tempName = "unknown_" + str(i)
+			tempExt = itemExt[itemHeader.index(fileHeader)]
+		else:
+			tempPath = sysargv[outfileArg] + "/Files/unknown_" + str(i)
+			tempName = "unknown_" + str(i)
+			tempExt = ""
 		while(fileNameID[fileRefID] != i and not done):
 			fileRefID += 1
 			if(fileRefID >= len(fileNameID)):
 				fileRefID = -1
 				done = True
-		if(fileRefID == -1):
-			outfile = open(sysargv[outfileArg] + "/Files/unknown_" + str(i),"wb")
-			IDFile.write("unknown_" + str(i))
+		if(fileRefID != -1):
+			tempPath = sysargv[outfileArg] + "/Files/" + itemString[fileType[fileRefID]] + "/" + names[FILE][fileRefID]
+			tempName = names[FILE][fileRefID]
+		if(fileHeader == "SWAR"):
+			numSwav = read_long(SDATPos + 0x38)
+			if not os.path.exists(tempPath):
+				os.makedirs(tempPath)
+			swavIDFile = open(tempPath + "/FileID.txt","w")
+			for i in range(numSwav):
+				swavOffset = SDATPos + read_long(SDATPos + (i * 4) + 0x3C)
+				swavLength = SDATPos + read_long(SDATPos + ((i + 1) * 4) + 0x3C)
+				if(i + 1 == numSwav):
+					swavLength = SDATPos+tempSize
+				swavSize = swavLength - swavOffset
+				outfile = open(tempPath + "/" + str(i) + ".swav","wb")
+				outfile.write(b'SWAV') #Header
+				outfile.write(b'\xFF\xFE\x00\x01') #magic
+				outfile.write((swavSize + 0x18).to_bytes(4,byteorder='little'))
+				outfile.write(b'\x10\x00\x01\x00') #structure size and blocks
+				outfile.write(b'DATA')
+				outfile.write((swavSize + 0x08).to_bytes(4,byteorder='little'))
+				outfile.write(SDAT[swavOffset:swavLength])
+				outfile.close()
+				swavIDFile.write(str(i) + ".swav\n")
+			swavIDFile.close()
 		else:
-			outfile = open(sysargv[outfileArg] + "/Files/" + names[FILE][fileRefID] + fileType[fileRefID],"wb")
-			IDFile.write(names[FILE][fileRefID] + fileType[fileRefID])
-		outfile.write(SDAT[SDATPos:SDATPos+tempSize])
+			outfile = open(tempPath + tempExt,"wb")
+			outfile.write(SDAT[SDATPos:SDATPos+tempSize])
+			outfile.close()
 		tempFileString = SDAT[SDATPos:SDATPos+tempSize]
 		if(calcMD5):
 			thisMD5 = hashlib.md5(tempFileString)
 			IDFile.write(";MD5 = " + thisMD5.hexdigest())
-		IDFile.write("\n")
-		outfile.close()
+		IDFile.write(tempName + tempExt + "\n")
 	IDFile.close()
 	ts2 = time.time() - ts
 	print("Done: " + str(ts2) + "s")
@@ -464,7 +522,6 @@ if(mode == 2): #Build
 
 	if(not skipFileOrder):
 		IDFile = open(sysargv[outfileArg] + "/FileID.txt", "r")
-		thisLine = ""
 		done = False
 		while(not done):
 			thisLine = IDFile.readline()
@@ -726,15 +783,65 @@ if(mode == 2): #Build
 	curFile = 0
 	tFileBuffer = []
 	for i, fName in enumerate(names[FILE]):
-		if not os.path.exists(sysargv[outfileArg] + "/Files/" + fName):
-			print("\nMissing File:'" + sysargv[outfileArg] + "/Files/" + fName + "'\n")
-			quit()
+		testPath = sysargv[outfileArg] + "/Files/" + itemString[itemExt.index(fName[-5:])] + "/" + fName
+		if not os.path.exists(testPath):
+			testPath = sysargv[outfileArg] + "/Files/" + fName
+			if not os.path.exists(testPath):
+				if(fName[-5:] == ".swar"):#can the swar be built?
+					testPath = sysargv[outfileArg] + "/Files/" + itemString[3] + "/" + fName[:-5] + "/FileID.txt"
+					if not os.path.exists(testPath):
+						print("\nMissing File:" + testPath)
+						quit()
+					swavIDFile = open(testPath, "r")
+					done = False
+					swavName = []
+					while(not done):
+						thisLine = swavIDFile.readline()
+						if not thisLine:
+							done = True
+						thisLine = thisLine.split(";") #ignore anything commented out
+						thisLine = thisLine[0]
+						thisLine = thisLine.split("\n") #remove newline
+						thisLine = thisLine[0]
+						if(thisLine != ""):
+							swavName.append(thisLine)
+					swavIDFile.close() #file names are stored now
+					swarTemp = []
+					for ii, sName in enumerate(swavName):
+						testPath = sysargv[outfileArg] + "/Files/" + itemString[3] + "/" + fName[:-5] + "/" + sName
+						if not os.path.exists(testPath):
+							print("\nMissing File:" + testPath)
+							quit()
+						tempFile = open(testPath, "rb")
+						swarTemp.append(tempFile.read())
+						tempFile.close()
+					testPath = sysargv[outfileArg] + "/Files/" + itemString[3] + "/" + fName
+					swarFile = open(testPath, "wb")
+					swarSize = sum(len(sf[0x18:]) for sf in swarTemp)
+					swarFile.write(b'SWAR') #Header
+					swarFile.write(b'\xFF\xFE\x00\x01') #magic
+					swarFile.write((swarSize + 0x3C + (len(swarTemp) * 4)).to_bytes(4,byteorder='little'))
+					swarFile.write(b'\x10\x00\x01\x00') #structure size and blocks
+					swarFile.write(b'DATA')
+					swarFile.write((swarSize + 0x2C + (len(swarTemp) * 4)).to_bytes(4,byteorder='little'))
+					swarFile.write(b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00') #reserved
+					swarFile.write((len(swarTemp)).to_bytes(4,byteorder='little'))
+					swarPointer = 0x3C + (len(swarTemp) * 4) #where the first swav will be in the file
+					for ii, sFile in enumerate(swarTemp):
+						swarFile.write((swarPointer).to_bytes(4,byteorder='little'))
+						swarPointer += len(sFile[0x18:])
+					for ii, sFile in enumerate(swarTemp):
+						swarFile.write(sFile[0x18:])
+					swarFile.close()
+				else:
+					print("\nMissing File:" + testPath)
+					quit()
 		curFileLoc = (len(SDAT) + sum(len(tf) for tf in tFileBuffer))
 		write_long((curFile * 16) + 12 + fatBlockOffset,curFileLoc) #write file pointer to the fatBlock
-		tempFile = open(sysargv[outfileArg] + "/Files/" + fName, "rb")
+		tempFile = open(testPath, "rb")
 		tFileBuffer.append(tempFile.read())
-		write_long((curFile * 16) + 16 + fatBlockOffset,len(tFileBuffer[curFile]))#write file size to the fatBlock
 		tempFile.close()
+		write_long((curFile * 16) + 16 + fatBlockOffset,len(tFileBuffer[curFile]))#write file size to the fatBlock
 
 		while((len(tFileBuffer[curFile]) & 0xFFFFFFE0) != len(tFileBuffer[curFile])):
 			tFileBuffer[curFile] += b'\x00' #pad to the nearest 0x20 byte alignment
