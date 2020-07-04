@@ -1,5 +1,5 @@
 #SDAT-Tool by FroggestSpirit
-version = "0.8.0"
+version = "0.8.1"
 #Unpacks and builds SDAT files
 #Make backups, this can overwrite files without confirmation
 
@@ -500,10 +500,11 @@ if(mode == 1): #Unpack
 			outfile.write(SDAT[SDATPos:SDATPos+tempSize])
 			outfile.close()
 		tempFileString = SDAT[SDATPos:SDATPos+tempSize]
+		IDFile.write(tempName + tempExt)
 		if(calcMD5):
 			thisMD5 = hashlib.md5(tempFileString)
 			IDFile.write(";MD5 = " + thisMD5.hexdigest())
-		IDFile.write(tempName + tempExt + "\n")
+		IDFile.write("\n")
 	IDFile.close()
 	ts2 = time.time() - ts
 	print("Done: " + str(ts2) + "s")
