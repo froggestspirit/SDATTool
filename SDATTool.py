@@ -1,5 +1,5 @@
 #SDAT-Tool by FroggestSpirit
-version = "0.8.1"
+version = "0.8.2"
 #Unpacks and builds SDAT files
 #Make backups, this can overwrite files without confirmation
 
@@ -458,12 +458,12 @@ if(mode == 1): #Unpack
 		fileRefID = 0
 		fileHeader = str(SDAT[SDATPos:SDATPos+4])[2:6]
 		if(fileHeader in itemHeader):
-			tempPath = sysargv[outfileArg] + "/Files/" + itemString[itemHeader.index(fileHeader)] + "/" + "unknown_" + str(i)
-			tempName = "unknown_" + str(i)
+			tempPath = sysargv[outfileArg] + "/Files/" + itemString[itemHeader.index(fileHeader)] + "/" + "unknown_" + hex(i).lstrip("0x").rstrip("L").zfill(2).upper()
+			tempName = "unknown_" + hex(i).lstrip("0x").rstrip("L").zfill(2).upper()
 			tempExt = itemExt[itemHeader.index(fileHeader)]
 		else:
-			tempPath = sysargv[outfileArg] + "/Files/unknown_" + str(i)
-			tempName = "unknown_" + str(i)
+			tempPath = sysargv[outfileArg] + "/Files/unknown_" + hex(i).lstrip("0x").rstrip("L").zfill(2).upper()
+			tempName = "unknown_" + hex(i).lstrip("0x").rstrip("L").zfill(2).upper()
 			tempExt = ""
 		while(fileNameID[fileRefID] != i and not done):
 			fileRefID += 1
@@ -478,13 +478,13 @@ if(mode == 1): #Unpack
 			if not os.path.exists(tempPath):
 				os.makedirs(tempPath)
 			swavIDFile = open(tempPath + "/FileID.txt","w")
-			for i in range(numSwav):
-				swavOffset = SDATPos + read_long(SDATPos + (i * 4) + 0x3C)
-				swavLength = SDATPos + read_long(SDATPos + ((i + 1) * 4) + 0x3C)
-				if(i + 1 == numSwav):
+			for ii in range(numSwav):
+				swavOffset = SDATPos + read_long(SDATPos + (ii * 4) + 0x3C)
+				swavLength = SDATPos + read_long(SDATPos + ((ii + 1) * 4) + 0x3C)
+				if(ii + 1 == numSwav):
 					swavLength = SDATPos+tempSize
 				swavSize = swavLength - swavOffset
-				outfile = open(tempPath + "/" + str(i) + ".swav","wb")
+				outfile = open(tempPath + "/" + hex(ii).lstrip("0x").rstrip("L").zfill(2).upper() + ".swav","wb")
 				outfile.write(b'SWAV') #Header
 				outfile.write(b'\xFF\xFE\x00\x01') #magic
 				outfile.write((swavSize + 0x18).to_bytes(4,byteorder='little'))
@@ -493,7 +493,7 @@ if(mode == 1): #Unpack
 				outfile.write((swavSize + 0x08).to_bytes(4,byteorder='little'))
 				outfile.write(SDAT[swavOffset:swavLength])
 				outfile.close()
-				swavIDFile.write(str(i) + ".swav\n")
+				swavIDFile.write(hex(ii).lstrip("0x").rstrip("L").zfill(2).upper() + ".swav\n")
 			swavIDFile.close()
 		else:
 			outfile = open(tempPath + tempExt,"wb")
