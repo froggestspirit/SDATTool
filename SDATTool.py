@@ -1,5 +1,5 @@
 #SDAT-Tool by FroggestSpirit
-version = "0.8.2"
+version = "0.9.0"
 #Unpacks and builds SDAT files
 #Make backups, this can overwrite files without confirmation
 
@@ -495,10 +495,133 @@ if(mode == 1): #Unpack
 				outfile.close()
 				swavIDFile.write(hex(ii).lstrip("0x").rstrip("L").zfill(2).upper() + ".swav\n")
 			swavIDFile.close()
-		else:
-			outfile = open(tempPath + tempExt,"wb")
-			outfile.write(SDAT[SDATPos:SDATPos+tempSize])
-			outfile.close()
+		elif(fileHeader == "SBNK"):
+			numInst = read_long(SDATPos + 0x38)
+			sbnkEnd = read_long(SDATPos + 0x08) + SDATPos
+			sbnkIDFile = open(tempPath + ".txt","w")
+			instType = []
+			instOffset = []
+			instOrder = []
+			instUsed = []
+			lastPointer = -1 #Because some instruments will point to the same exact definition
+			furthestRead = SDATPos + 0x3C + (numInst * 4) #Because someone decided to leave in data that's not pointed to...
+			for ii in range(numInst):
+				instType.append(SDAT[SDATPos + 0x3C + (ii * 4)])
+				instOffset.append(read_short(SDATPos + 0x3C + (ii * 4) + 1))
+				instOrder.append(-1)
+				instUsed.append(False)
+			for ii in range(numInst): #get the order the data is stored for 1:1 builds
+				lowestPointer = 0xFFFFFFFF
+				lowestPointerID = -1
+				for x in range(numInst):
+					if(not instUsed[x]):
+						if(lowestPointer > instOffset[x]):
+							lowestPointer = instOffset[x]
+							lowestPointerID = x
+				instOrder[ii] = lowestPointerID
+				instUsed[lowestPointerID] = True
+			for ii in range(numInst):
+				if(instOffset[instOrder[ii]] == lastPointer and lastPointer > 0):
+					sbnkIDFile.write(str(instOrder[ii]))
+					sbnkIDFile.write(",SameAsAbove\n")
+				elif(instType[instOrder[ii]] == 0):
+					sbnkIDFile.write(str(instOrder[ii]))
+					sbnkIDFile.write(",NULL\n")
+				elif(instType[instOrder[ii]] < 16):
+					if(furthestRead < SDATPos + instOffset[instOrder[ii]]):
+						sbnkIDFile.write("Unused")
+						while(furthestRead < SDATPos + instOffset[instOrder[ii]]):
+							sbnkIDFile.write("," + str(SDAT[furthestRead]))
+							furthestRead += 1
+						sbnkIDFile.write("\n")
+					sbnkIDFile.write(str(instOrder[ii]))
+					if(instType[instOrder[ii]] == 1):
+						sbnkIDFile.write(",Single")
+					elif(instType[instOrder[ii]] == 2):
+						sbnkIDFile.write(",PSG1")
+					elif(instType[instOrder[ii]] == 3):
+						sbnkIDFile.write(",PSG2")
+					elif(instType[instOrder[ii]] == 4):
+						sbnkIDFile.write(",PSG3")
+					else:						
+						sbnkIDFile.write("," + str(instType[instOrder[ii]]))
+					sbnkIDFile.write("," + str(read_short(SDATPos + instOffset[instOrder[ii]])))
+					sbnkIDFile.write("," + str(read_short(SDATPos + instOffset[instOrder[ii]] + 2)))
+					sbnkIDFile.write("," + str(SDAT[SDATPos + instOffset[instOrder[ii]] + 4]))
+					sbnkIDFile.write("," + str(SDAT[SDATPos + instOffset[instOrder[ii]] + 5]))
+					sbnkIDFile.write("," + str(SDAT[SDATPos + instOffset[instOrder[ii]] + 6]))
+					sbnkIDFile.write("," + str(SDAT[SDATPos + instOffset[instOrder[ii]] + 7]))
+					sbnkIDFile.write("," + str(SDAT[SDATPos + instOffset[instOrder[ii]] + 8]))
+					sbnkIDFile.write("," + str(SDAT[SDATPos + instOffset[instOrder[ii]] + 9]) + "\n")
+					if(SDATPos + instOffset[instOrder[ii]] + 9 > furthestRead):
+						furthestRead = SDATPos + instOffset[instOrder[ii]] + 10
+				elif(instType[instOrder[ii]] == 16):
+					if(furthestRead < SDATPos + instOffset[instOrder[ii]]):
+						sbnkIDFile.write("Unused")
+						while(furthestRead < SDATPos + instOffset[instOrder[ii]]):
+							sbnkIDFile.write("," + str(SDAT[furthestRead]))
+							furthestRead += 1
+						sbnkIDFile.write("\n")
+					sbnkIDFile.write(str(instOrder[ii]))
+					lowNote = SDAT[SDATPos + instOffset[instOrder[ii]]]
+					highNote = SDAT[SDATPos + instOffset[instOrder[ii]] + 1]
+					sbnkIDFile.write(",Drums")
+					sbnkIDFile.write("," + str(lowNote))
+					sbnkIDFile.write("," + str(highNote) + "\n")
+					x = 0
+					while(read_short(SDATPos + instOffset[instOrder[ii]] + 2 + (x * 12)) == 1 and read_short(SDATPos + instOffset[instOrder[ii]] + 6 + (x * 12)) < 4):
+						sbnkIDFile.write("\t" + str(read_short(SDATPos + instOffset[instOrder[ii]] + 2 + (x * 12))))
+						sbnkIDFile.write("," + str(read_short(SDATPos + instOffset[instOrder[ii]] + 4 + (x * 12))))
+						sbnkIDFile.write("," + str(read_short(SDATPos + instOffset[instOrder[ii]] + 6 + (x * 12))))
+						sbnkIDFile.write("," + str(SDAT[SDATPos + instOffset[instOrder[ii]] + 8 + (x * 12)]))
+						sbnkIDFile.write("," + str(SDAT[SDATPos + instOffset[instOrder[ii]] + 9 + (x * 12)]))
+						sbnkIDFile.write("," + str(SDAT[SDATPos + instOffset[instOrder[ii]] + 10 + (x * 12)]))
+						sbnkIDFile.write("," + str(SDAT[SDATPos + instOffset[instOrder[ii]] + 11 + (x * 12)]))
+						sbnkIDFile.write("," + str(SDAT[SDATPos + instOffset[instOrder[ii]] + 12 + (x * 12)]))
+						sbnkIDFile.write("," + str(SDAT[SDATPos + instOffset[instOrder[ii]] + 13 + (x * 12)]) + "\n")
+						x += 1
+					x -= 1
+					if(SDATPos + instOffset[instOrder[ii]] + 13 + (x * 12) > furthestRead):
+						furthestRead = SDATPos + instOffset[instOrder[ii]] + 14 + (x * 12)
+				elif(instType[instOrder[ii]] == 17):
+					if(furthestRead < SDATPos + instOffset[instOrder[ii]]):
+						sbnkIDFile.write("Unused")
+						while(furthestRead < SDATPos + instOffset[instOrder[ii]]):
+							sbnkIDFile.write("," + str(SDAT[furthestRead]))
+							furthestRead += 1
+						sbnkIDFile.write("\n")
+					sbnkIDFile.write(str(instOrder[ii]))
+					regions = 0
+					sbnkIDFile.write(",Keysplit")
+					for x in range(8):
+						if(SDAT[SDATPos + instOffset[instOrder[ii]] + x] > 0):
+							regions += 1
+						sbnkIDFile.write("," + str(SDAT[SDATPos + instOffset[instOrder[ii]] + x]))
+					sbnkIDFile.write("\n")
+					tempOffset = SDATPos + instOffset[instOrder[ii]] + 8
+					for x in range(regions):
+						sbnkIDFile.write("\t" + str(read_short(SDATPos + instOffset[instOrder[ii]] + 8 + (x * 12))))
+						sbnkIDFile.write("," + str(read_short(SDATPos + instOffset[instOrder[ii]] + 10 + (x * 12))))
+						sbnkIDFile.write("," + str(read_short(SDATPos + instOffset[instOrder[ii]] + 12 + (x * 12))))
+						sbnkIDFile.write("," + str(SDAT[SDATPos + instOffset[instOrder[ii]] + 14 + (x * 12)]))
+						sbnkIDFile.write("," + str(SDAT[SDATPos + instOffset[instOrder[ii]] + 15 + (x * 12)]))
+						sbnkIDFile.write("," + str(SDAT[SDATPos + instOffset[instOrder[ii]] + 16 + (x * 12)]))
+						sbnkIDFile.write("," + str(SDAT[SDATPos + instOffset[instOrder[ii]] + 17 + (x * 12)]))
+						sbnkIDFile.write("," + str(SDAT[SDATPos + instOffset[instOrder[ii]] + 18 + (x * 12)]))
+						sbnkIDFile.write("," + str(SDAT[SDATPos + instOffset[instOrder[ii]] + 19 + (x * 12)]) + "\n")
+						if(SDATPos + instOffset[instOrder[ii]] + 19 + (x * 12) > furthestRead):
+							furthestRead = SDATPos + instOffset[instOrder[ii]] + 20 + (x * 12)
+				lastPointer = instOffset[instOrder[ii]]
+			if(furthestRead < sbnkEnd):
+				sbnkIDFile.write("Unused")
+				while(furthestRead < sbnkEnd):
+					sbnkIDFile.write("," + str(SDAT[furthestRead]))
+					furthestRead += 1
+				sbnkIDFile.write("\n")
+			sbnkIDFile.close()
+		outfile = open(tempPath + tempExt,"wb")
+		outfile.write(SDAT[SDATPos:SDATPos+tempSize])
+		outfile.close()
 		tempFileString = SDAT[SDATPos:SDATPos+tempSize]
 		IDFile.write(tempName + tempExt)
 		if(calcMD5):
@@ -834,6 +957,114 @@ if(mode == 2): #Build
 					for ii, sFile in enumerate(swarTemp):
 						swarFile.write(sFile[0x18:])
 					swarFile.close()
+				elif(fName[-5:] == ".sbnk"):#can the sbnk be built?
+					testPath = sysargv[outfileArg] + "/Files/" + itemString[2] + "/" + fName[:-5] + ".txt"
+					if not os.path.exists(testPath):
+						print("\nMissing File:" + testPath)
+						quit()
+					sbnkIDFile = open(testPath, "r")
+					done = False
+					sbnkLines = []
+					numInst = 0
+					while(not done):
+						thisLine = sbnkIDFile.readline()
+						if not thisLine:
+							done = True
+						thisLine = thisLine.split(";") #ignore anything commented out
+						thisLine = thisLine[0]
+						thisLine = thisLine.split("\n") #remove newline
+						thisLine = thisLine[0]
+						if(thisLine != ""):
+							sbnkLines.append(thisLine)
+							if(thisLine.find("\t") == -1 and thisLine.find("Unused") == -1): #Don't count unused or sub definitions
+								numInst += 1
+					sbnkIDFile.close() #file names are stored now
+					sbnkHeader = []
+					sbnkData = []
+					prevPointer = b'\x00\x00\x00\x00'
+					sbnkHeader.append(b'SBNK') #Header
+					sbnkHeader.append(b'\xFF\xFE\x00\x01') #magic
+					sbnkHeader.append(b'\x00\x00\x00\x00') #Reserve for sbnk size
+					sbnkHeader.append(b'\x10\x00\x01\x00') #structure size and blocks
+					sbnkHeader.append(b'DATA')
+					sbnkHeader.append(b'\x00\x00\x00\x00') #Reserve for struct size
+					sbnkHeader.append(b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00') #reserved
+					sbnkHeader.append((numInst).to_bytes(4,byteorder='little')) #Number of instruments
+					for ii in range(numInst):
+						sbnkHeader.append(b'\x00\x00\x00\x00') #Reserve for pointers
+					for ii, inst in enumerate(sbnkLines):
+						thisLine = inst
+						if(thisLine.find("\t") == -1):
+							thisLine = thisLine.split(",")
+							if(thisLine[1] == "SameAsAbove"):
+								sbnkHeader[8 + int(thisLine[0])] = prevPointer
+							elif(thisLine[1] != "0" and thisLine[1] != "NULL"):
+								if(thisLine[1] == "Single"):
+									thisLine[1] = "1"
+								elif(thisLine[1] == "PSG1"):
+									thisLine[1] = "2"
+								elif(thisLine[1] == "PSG2"):
+									thisLine[1] = "3"
+								elif(thisLine[1] == "PSG3"):
+									thisLine[1] = "4"
+								elif(thisLine[1] == "Drums"):
+									thisLine[1] = "16"
+								elif(thisLine[1] == "Keysplit"):
+									thisLine[1] = "17"
+								sbnkHeaderSize = (numInst * 4) + 0x3C
+								if(thisLine[0] == "Unused"):
+									for x, unusedData in enumerate(thisLine[1:]):
+										sbnkData.append((int(unusedData)).to_bytes(1,byteorder='little'))
+								else:
+									prevPointer = (int(thisLine[1]) + ((sbnkHeaderSize + sum(len(tf) for tf in sbnkData)) << 8)).to_bytes(4,byteorder='little')
+									sbnkHeader[8 + int(thisLine[0])] = prevPointer
+								if(int(thisLine[1]) < 16):
+									sbnkData.append((int(thisLine[2])).to_bytes(2,byteorder='little'))
+									sbnkData.append((int(thisLine[3])).to_bytes(2,byteorder='little'))
+									sbnkData.append((int(thisLine[4])).to_bytes(1,byteorder='little'))
+									sbnkData.append((int(thisLine[5])).to_bytes(1,byteorder='little'))
+									sbnkData.append((int(thisLine[6])).to_bytes(1,byteorder='little'))
+									sbnkData.append((int(thisLine[7])).to_bytes(1,byteorder='little'))
+									sbnkData.append((int(thisLine[8])).to_bytes(1,byteorder='little'))
+									sbnkData.append((int(thisLine[9])).to_bytes(1,byteorder='little'))
+								elif(int(thisLine[1]) == 16):
+									sbnkData.append((int(thisLine[2])).to_bytes(1,byteorder='little'))
+									sbnkData.append((int(thisLine[3])).to_bytes(1,byteorder='little'))
+								elif(int(thisLine[1]) == 17):
+									sbnkData.append((int(thisLine[2])).to_bytes(1,byteorder='little'))
+									sbnkData.append((int(thisLine[3])).to_bytes(1,byteorder='little'))
+									sbnkData.append((int(thisLine[4])).to_bytes(1,byteorder='little'))
+									sbnkData.append((int(thisLine[5])).to_bytes(1,byteorder='little'))
+									sbnkData.append((int(thisLine[6])).to_bytes(1,byteorder='little'))
+									sbnkData.append((int(thisLine[7])).to_bytes(1,byteorder='little'))
+									sbnkData.append((int(thisLine[8])).to_bytes(1,byteorder='little'))
+									sbnkData.append((int(thisLine[9])).to_bytes(1,byteorder='little'))
+						else:
+							thisLine = thisLine.split("\t")
+							thisLine = thisLine[1]
+							thisLine = thisLine.split(",")
+							sbnkData.append((int(thisLine[0])).to_bytes(2,byteorder='little'))
+							sbnkData.append((int(thisLine[1])).to_bytes(2,byteorder='little'))
+							sbnkData.append((int(thisLine[2])).to_bytes(2,byteorder='little'))
+							sbnkData.append((int(thisLine[3])).to_bytes(1,byteorder='little'))
+							sbnkData.append((int(thisLine[4])).to_bytes(1,byteorder='little'))
+							sbnkData.append((int(thisLine[5])).to_bytes(1,byteorder='little'))
+							sbnkData.append((int(thisLine[6])).to_bytes(1,byteorder='little'))
+							sbnkData.append((int(thisLine[7])).to_bytes(1,byteorder='little'))
+							sbnkData.append((int(thisLine[8])).to_bytes(1,byteorder='little'))
+					sbnkSize = sum(len(tf) for tf in sbnkData) + sbnkHeaderSize
+					while((sbnkSize & 0xFFFFFFFC) != sbnkSize):
+						sbnkData.append(b'\x00') #pad to the nearest 0x4 byte alignment
+						sbnkSize += 1
+					sbnkHeader[2] = (sbnkSize).to_bytes(4,byteorder='little')
+					sbnkHeader[5] = (sbnkSize - 0x10).to_bytes(4,byteorder='little')
+					testPath = sysargv[outfileArg] + "/Files/" + itemString[2] + "/" + fName
+					sbnkFile = open(testPath, "wb")
+					for ii, listItem in enumerate(sbnkHeader):
+						sbnkFile.write(listItem)
+					for ii, listItem in enumerate(sbnkData):
+						sbnkFile.write(listItem)
+					sbnkFile.close()
 				else:
 					print("\nMissing File:" + testPath)
 					quit()
