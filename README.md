@@ -1,5 +1,5 @@
 # SDATTool
-By FroggestSpirit Version 0.8.2
+By FroggestSpirit Version 0.9.0
 
 Unpack/Pack NDS SDAT Files
 
@@ -31,6 +31,10 @@ Un-edited rebuilt SDAT files should be 1:1, if an SDAT is ripped from a game, de
 
 Un-edited rebuilt SDAT files using the -o flag should work normally in-game, if not please let me know.
 
+
+New in version 0.9.0:
+
+-SBNK files now unpack into a txt file, along with the SBNKs. Building will look for a built SBNK first, then if not found, build the SBNK from the text file with the same name
 
 New in version 0.8.0:
 
