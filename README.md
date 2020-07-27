@@ -1,5 +1,5 @@
 # SDATTool
-By FroggestSpirit Version 0.9.0
+By FroggestSpirit Version 0.9.1
 
 Unpack/Pack NDS SDAT Files
 
@@ -31,6 +31,10 @@ Un-edited rebuilt SDAT files should be 1:1, if an SDAT is ripped from a game, de
 
 Un-edited rebuilt SDAT files using the -o flag should work normally in-game, if not please let me know.
 
+
+New in version 0.9.1:
+
+-code cleanup
 
 New in version 0.9.0:
 
