@@ -476,10 +476,10 @@ if mode == 1: #Unpack
                         with open(tempPath + "/" + hex(ii).lstrip("0x").rstrip("L").zfill(2).upper() + ".swav","wb") as outfile:
                             outfile.write(b'SWAV') #Header
                             outfile.write(b'\xFF\xFE\x00\x01') #magic
-                            outfile.write((swavSize + 0x18).to_bytes(4,byteorder='little'))
+                            outfile.write(swavSize + 0x18)
                             outfile.write(b'\x10\x00\x01\x00') #structure size and blocks
                             outfile.write(b'DATA')
-                            outfile.write((swavSize + 0x08).to_bytes(4,byteorder='little'))
+                            outfile.write(swavSize + 0x08)
                             outfile.write(SDAT[swavOffset:swavLength])
                         swavIDFile.write(hex(ii).lstrip("0x").rstrip("L").zfill(2).upper() + ".swav\n")
             elif fileHeader == b'SBNK':
