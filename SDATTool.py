@@ -104,10 +104,10 @@ SDAT = bytearray()
 SDATPos = 0
 
 def read_long(pos):
-    return (SDAT[pos + 3] * 0x1000000) + (SDAT[pos + 2] * 0x10000) + (SDAT[pos + 1] * 0x100) + SDAT[pos]
+    return int.from_bytes(SDAT[pos:pos + 4], 'little')
 
 def read_short(pos):
-    return (SDAT[pos + 1] * 0x100) + SDAT[pos]
+    return int.from_bytes(SDAT[pos:pos + 2], 'little')
 
 def add_fileName(name):
     if name not in names[FILE]:
@@ -239,43 +239,27 @@ def append_params(item,index,tList): #append paramerters of an item to SDAT
 
 def append_long(x): #append a 32bit value to SDAT LSB first
     global SDAT
-    SDAT += (x & 0xFF).to_bytes(1,byteorder='little')
-    x >>= 8
-    SDAT += (x & 0xFF).to_bytes(1,byteorder='little')
-    x >>= 8
-    SDAT += (x & 0xFF).to_bytes(1,byteorder='little')
-    x >>= 8
-    SDAT += (x & 0xFF).to_bytes(1,byteorder='little')
+    SDAT += x.to_bytes(4, 'little')
 
 def append_short(x): #append a 16bit value to SDAT LSB first
     global SDAT
-    SDAT += (x & 0xFF).to_bytes(1,byteorder='little')
-    x >>= 8
-    SDAT += (x & 0xFF).to_bytes(1,byteorder='little')
+    SDAT += x.to_bytes(2, 'little')
 
 def append_byte(x): #append an 8bit value to SDAT
     global SDAT
-    SDAT += (x & 0xFF).to_bytes(1,byteorder='little')
+    SDAT += x.to_bytes(1, 'little')
 
 def write_long(loc, x): #write a 32bit value to SDAT at position loc LSB first
     global SDAT
-    SDAT[loc] = (x & 0xFF)
-    x >>= 8
-    SDAT[loc+1] = (x & 0xFF)
-    x >>= 8
-    SDAT[loc+2] = (x & 0xFF)
-    x >>= 8
-    SDAT[loc+3] = (x & 0xFF)
+    SDAT[loc:loc + 4] = x.to_bytes(4, 'little')
 
 def write_short(loc, x): #write a 16bit value to SDAT at position loc LSB first
     global SDAT
-    SDAT[loc] = (x & 0xFF)
-    x >>= 8
-    SDAT[loc+1] = (x & 0xFF)
+    SDAT[loc:loc + 2] = x.to_bytes(2, 'little')
 
 def write_byte(loc, x): #write an 8bit value to SDAT at position loc
     global SDAT
-    SDAT[loc] = (x & 0xFF)
+    SDAT[loc] = x.to_bytes(1, 'little')
 
 def get_string():
     global SDAT, SDATPos
