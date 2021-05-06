@@ -1,22 +1,14 @@
-import sys
 import os
 import hashlib
 import time
+import argparse
 
 # SDAT-Tool by FroggestSpirit
-version = "0.9.1"
+version = "0.9.2"
 # Unpacks and builds SDAT files
 # Make backups, this can overwrite files without confirmation
 
 ts = time.time()
-sysargv = sys.argv
-echo = True
-mode = 0
-calcMD5 = False
-optimize = False
-skipSymbBlock = False
-skipFileOrder = False
-removeUnused = False
 
 LONG = -4
 SHORT = -2
@@ -114,9 +106,9 @@ def read_short(pos):
 def add_fileName(name):
     if name not in names[FILE]:
         if optimize:
-            testPath = sysargv[outfileArg] + "/Files/" + itemString[itemExt.index(name[-5:])] + "/" + name
+            testPath = outfileArg + "/Files/" + itemString[itemExt.index(name[-5:])] + "/" + name
             if not os.path.exists(testPath):
-                testPath = sysargv[outfileArg] + "/Files/" + name
+                testPath = outfileArg + "/Files/" + name
             if os.path.exists(testPath):
                 tempFile = open(testPath, "rb")
                 tFileBuffer = []
@@ -288,59 +280,43 @@ def get_string():
     return retString
 
 # Main
-print("SDAT-Tool " + version)
-infileArg = -1
-outfileArg = -1
-for i, argument in enumerate(sysargv):
-    if i > 0:
-        if argument.startswith("-"):
-            if argument in ("-u", "--unpack"):
-                mode = 1
-            elif argument in ("-b", "--build"):
-                mode = 2
-            elif argument in ("-h", "--help"):
-                mode = 0
-            elif argument in ("-m", "--md5"):
-                calcMD5 = True
-            elif argument in ("-o", "--optimize"):
-                optimize = True
-                skipFileOrder = True
-            elif argument in ("-ru", "--removeUnused"):
-                optimize = True
-                skipFileOrder = True
-                removeUnused = True
-            elif argument in ("-ns", "--noSymbBlock"):
-                skipSymbBlock = True
-        else:
-            if infileArg == -1:
-                infileArg = i
-            elif outfileArg == -1:
-                outfileArg = i
+parser = argparse.ArgumentParser(description=f"SDAT-Tool {version}: Unpack/Pack NDS SDAT Files")
+parser.add_argument("SDATfile")
+parser.add_argument("folder", nargs="?")
+mode_grp = parser.add_mutually_exclusive_group(required=True)
+mode_grp.add_argument("-u", "--unpack", dest="mode", action="store_false")
+mode_grp.add_argument("-b", "--build", dest="mode", action="store_true")
+parser.add_argument("-m", "--md5", dest="md5", action="store_true", help="Calculate file MD5 when unpacking")
+parser.add_argument("-o", "--optimize", dest="optimize", action="store_true", help="Build Optimized")
+parser.add_argument("-ru", "--removeUnused", dest="removeUnused", action="store_true", help="Build without unused entries (can break games)")
+parser.add_argument("-ns", "--noSymbBlock", dest="noSymbBlock", action="store_true", help="Build without a SymbBlock")
+args = parser.parse_args()
 
-if infileArg == -1:
-    mode = 0
+mode = args.mode
+infileArg = args.SDATfile
+outfileArg = args.folder
+calcMD5 = args.md5
+removeUnused = args.removeUnused
+if removeUnused:
+    optimize = True
+    skipFileOrder = True
 else:
-    if outfileArg == -1:
-        if sysargv[infileArg].find(".sdat") != -1:
-            if mode == 0:
-                mode = 1
-            outfileArg = len(sysargv)
-            sysargv.append(sysargv[infileArg].replace(".sdat", ""))
-        else:
-            mode = 0
-    else:
-        if sysargv[infileArg] == sysargv[outfileArg]:
-            print("Input and output files cannot be the same")
-            sys.exit()
-if mode == 0:  # Help
-    print("Usage: "+sysargv[0]+" [SDAT File] [mode] [SDAT Folder] [flags]\nMode:\n        -b        Build SDAT\n        -u        Unpack SDAT\n        -h        Show this help message\n\nFlags:\n        -m        Calculate file MD5 when unpacking\n        -o        Build Optimized\n        -ru        Build without unused entries (can break games)\n        -ns        Build without a SymbBlock\n")
-    sys.exit()
+    optimize = args.optimize
+    skipFileOrder = args.optimize
+skipSymbBlock = args.noSymbBlock
 
-if mode == 1:  # Unpack
+if infileArg.lower().find(".sdat") == -1:
+    raise Exception("File is not a SDAT file")
+if not outfileArg:
+    outfileArg = infileArg.lower().replace(".sdat","")
+if infileArg == outfileArg:
+    raise Exception("Input and output cannot match")
+
+if not mode:  # Unpack
     print("Unpacking...")
-    if not os.path.exists(sysargv[outfileArg]):
-        os.makedirs(sysargv[outfileArg])
-    with open(sysargv[infileArg], "rb") as infile:
+    if not os.path.exists(outfileArg):
+        os.makedirs(outfileArg)
+    with open(infileArg, "rb") as infile:
         SDAT = bytearray(infile.read())
     fileSize = len(SDAT)
     SDATSize = read_long(8)
@@ -376,7 +352,7 @@ if mode == 1:  # Unpack
                 SDATPos = itemSymbOffset[i]
                 entries = read_long(SDATPos)
                 if entries > 0:
-                    outfile = open(sysargv[outfileArg] + "/SymbBlock.txt", "w")
+                    outfile = open(outfileArg + "/SymbBlock.txt", "w")
                     outfile.write(itemString[i] + "{\n")
                 for ii in range(entries):
                     SDATPos = read_long(itemSymbOffset[i] + 4 + (ii * 8)) + symbOffset
@@ -398,7 +374,7 @@ if mode == 1:  # Unpack
     SDATPos = infoOffset + 8
     for i in range(8):
         itemOffset[i] = read_long(SDATPos + (i * 4)) + infoOffset
-    with open(sysargv[outfileArg] + "/InfoBlock.txt", "w") as outfile:
+    with open(outfileArg + "/InfoBlock.txt", "w") as outfile:
         for i in range(8):
             SDATPos = itemOffset[i]
             outfile.write(itemParamString[i])
@@ -427,19 +403,19 @@ if mode == 1:  # Unpack
     # FAT Block / File Block
     SDATPos = fatOffset + 8
     entries = read_long(SDATPos)
-    with open(sysargv[outfileArg] + "/FileID.txt", "w") as IDFile:
-        if not os.path.exists(sysargv[outfileArg] + "/Files"):
-            os.makedirs(sysargv[outfileArg] + "/Files")
-        if not os.path.exists(sysargv[outfileArg] + "/Files/" + itemString[0]):
-            os.makedirs(sysargv[outfileArg] + "/Files/" + itemString[0])
-        if not os.path.exists(sysargv[outfileArg] + "/Files/" + itemString[1]):
-            os.makedirs(sysargv[outfileArg] + "/Files/" + itemString[1])
-        if not os.path.exists(sysargv[outfileArg] + "/Files/" + itemString[2]):
-            os.makedirs(sysargv[outfileArg] + "/Files/" + itemString[2])
-        if not os.path.exists(sysargv[outfileArg] + "/Files/" + itemString[3]):
-            os.makedirs(sysargv[outfileArg] + "/Files/" + itemString[3])
-        if not os.path.exists(sysargv[outfileArg] + "/Files/" + itemString[7]):
-            os.makedirs(sysargv[outfileArg] + "/Files/" + itemString[7])
+    with open(outfileArg + "/FileID.txt", "w") as IDFile:
+        if not os.path.exists(outfileArg + "/Files"):
+            os.makedirs(outfileArg + "/Files")
+        if not os.path.exists(outfileArg + "/Files/" + itemString[0]):
+            os.makedirs(outfileArg + "/Files/" + itemString[0])
+        if not os.path.exists(outfileArg + "/Files/" + itemString[1]):
+            os.makedirs(outfileArg + "/Files/" + itemString[1])
+        if not os.path.exists(outfileArg + "/Files/" + itemString[2]):
+            os.makedirs(outfileArg + "/Files/" + itemString[2])
+        if not os.path.exists(outfileArg + "/Files/" + itemString[3]):
+            os.makedirs(outfileArg + "/Files/" + itemString[3])
+        if not os.path.exists(outfileArg + "/Files/" + itemString[7]):
+            os.makedirs(outfileArg + "/Files/" + itemString[7])
         for i in range(entries):
             SDATPos = read_long(fatOffset + 12 + (i * 16))
             tempSize = read_long(fatOffset + 16 + (i * 16))
@@ -447,11 +423,11 @@ if mode == 1:  # Unpack
             fileRefID = 0
             fileHeader = SDAT[SDATPos:SDATPos+4]
             if fileHeader in itemHeader:
-                tempPath = sysargv[outfileArg] + "/Files/" + itemString[itemHeader.index(fileHeader)] + "/" + "unknown_{0:02X}".format(i)
+                tempPath = outfileArg + "/Files/" + itemString[itemHeader.index(fileHeader)] + "/" + "unknown_{0:02X}".format(i)
                 tempName = "unknown_{0:02X}".format(i)
                 tempExt = itemExt[itemHeader.index(fileHeader)]
             else:
-                tempPath = sysargv[outfileArg] + "/Files/unknown_{0:02X}".format(i)
+                tempPath = outfileArg + "/Files/unknown_{0:02X}".format(i)
                 tempName = "unknown_{0:02X}".format(i)
                 tempExt = ""
             while fileNameID[fileRefID] != i and not done:
@@ -460,7 +436,7 @@ if mode == 1:  # Unpack
                     fileRefID = -1
                     done = True
             if fileRefID != -1:
-                tempPath = sysargv[outfileArg] + "/Files/" + itemString[fileType[fileRefID]] + "/" + names[FILE][fileRefID]
+                tempPath = outfileArg + "/Files/" + itemString[fileType[fileRefID]] + "/" + names[FILE][fileRefID]
                 tempName = names[FILE][fileRefID]
             if fileHeader == b'SWAR':
                 numSwav = read_long(SDATPos + 0x38)
@@ -616,20 +592,19 @@ if mode == 1:  # Unpack
     ts2 = time.time() - ts
     print("Done: " + str(ts2) + "s")
 
-if mode == 2:  # Build
+if mode:  # Build
     print("Building...")
     blocks = 4
     if skipSymbBlock:
         blocks = 3
-    if not os.path.exists(sysargv[outfileArg] + "/FileID.txt"):
+    if not os.path.exists(outfileArg + "/FileID.txt"):
         print("\nMissing FileID.txt, files will be ordered as they are in the InfoBlock.\n")
         skipFileOrder = True
-    if not os.path.exists(sysargv[outfileArg] + "/InfoBlock.txt"):
-        print("\nMissing InfoBlock.txt\n")
-        quit()
+    if not os.path.exists(outfileArg + "/InfoBlock.txt"):
+        raise Exception("Missing InfoBlock.txt\n")
 
     if not skipFileOrder:
-        with open(sysargv[outfileArg] + "/FileID.txt", "r") as IDFile:
+        with open(outfileArg + "/FileID.txt", "r") as IDFile:
             done = False
             while not done:
                 thisLine = IDFile.readline()
@@ -642,7 +617,7 @@ if mode == 2:  # Build
                 if thisLine != "":
                     names[FILE].append(thisLine)
                     itemCount[FILE] += 1
-    with open(sysargv[outfileArg] + "/InfoBlock.txt", "r") as infoFile:
+    with open(outfileArg + "/InfoBlock.txt", "r") as infoFile:
         seqarcSymbSubCount = []  # keep track of how many sub strings are in each seqarc
         for i in range(8):
             done = False
@@ -669,8 +644,8 @@ if mode == 2:  # Build
                                 for ii, param in enumerate(itemParams[i]):
                                     if param >= 0:
                                         namesUsed[param].append(thisLine[ii + 1])
-    if blocks == 4 and os.path.exists(sysargv[outfileArg] + "/SymbBlock.txt"):
-        with open(sysargv[outfileArg] + "/SymbBlock.txt", "r") as symbFile:
+    if blocks == 4 and os.path.exists(outfileArg + "/SymbBlock.txt"):
+        with open(outfileArg + "/SymbBlock.txt", "r") as symbFile:
             thisLine = ""
             seqarcSymbSubNum = 0
             done = False
@@ -711,7 +686,7 @@ if mode == 2:  # Build
                                 mainSEQARCID = -1
             if mainSEQARCID != -1:
                 seqarcSymbSubCount[mainSEQARCID] = seqarcSymbSubNum
-    with open(sysargv[outfileArg] + "/InfoBlock.txt", "r") as infoFile:
+    with open(outfileArg + "/InfoBlock.txt", "r") as infoFile:
         for i in range(8):
             done = False
             params = len(itemParams[i]) + 1
@@ -740,8 +715,7 @@ if mode == 2:  # Build
                                     for ii, number in enumerate(thisLine[1:]):
                                         thisLine[ii + 1] = int(number)  # convert ID to an integer
                                 if len(thisLine) != params:
-                                    print("\n" + itemString[i] + " wrong number of parameters.\n")
-                                    quit()
+                                    raise Exception("" + itemString[i] + " wrong number of parameters.\n")
                                 if i != GROUP:
                                     thisLine = convert_params(thisLine, itemParams[i])
                                 for ii in range(params):
@@ -878,15 +852,14 @@ if mode == 2:  # Build
     curFile = 0
     tFileBuffer = []
     for i, fName in enumerate(names[FILE]):
-        testPath = sysargv[outfileArg] + "/Files/" + itemString[itemExt.index(fName[-5:])] + "/" + fName
+        testPath = outfileArg + "/Files/" + itemString[itemExt.index(fName[-5:])] + "/" + fName
         if not os.path.exists(testPath):
-            testPath = sysargv[outfileArg] + "/Files/" + fName
+            testPath = outfileArg + "/Files/" + fName
             if not os.path.exists(testPath):
                 if fName[-5:] == ".swar":  # can the swar be built?
-                    testPath = sysargv[outfileArg] + "/Files/" + itemString[3] + "/" + fName[:-5] + "/FileID.txt"
+                    testPath = outfileArg + "/Files/" + itemString[3] + "/" + fName[:-5] + "/FileID.txt"
                     if not os.path.exists(testPath):
-                        print("\nMissing File:" + testPath)
-                        quit()
+                        raise Exception("Missing File:" + testPath)
                     with open(testPath, "r") as swavIDFile:
                         done = False
                         swavName = []
@@ -902,13 +875,12 @@ if mode == 2:  # Build
                                 swavName.append(thisLine)
                     swarTemp = []
                     for ii, sName in enumerate(swavName):
-                        testPath = sysargv[outfileArg] + "/Files/" + itemString[3] + "/" + fName[:-5] + "/" + sName
+                        testPath = outfileArg + "/Files/" + itemString[3] + "/" + fName[:-5] + "/" + sName
                         if not os.path.exists(testPath):
-                            print("\nMissing File:" + testPath)
-                            quit()
+                            raise Exception("Missing File:" + testPath)
                         with open(testPath, "rb") as tempFile:
                             swarTemp.append(bytearray(tempFile.read()))
-                    testPath = sysargv[outfileArg] + "/Files/" + itemString[3] + "/" + fName
+                    testPath = outfileArg + "/Files/" + itemString[3] + "/" + fName
                     with open(testPath, "wb") as swarFile:
                         swarSize = sum(len(sf[0x18:]) for sf in swarTemp)
                         swarFile.write(b'SWAR')  # Header
@@ -926,10 +898,9 @@ if mode == 2:  # Build
                         for ii, sFile in enumerate(swarTemp):
                             swarFile.write(sFile[0x18:])
                 elif fName[-5:] == ".sbnk":  # can the sbnk be built?
-                    testPath = sysargv[outfileArg] + "/Files/" + itemString[2] + "/" + fName[:-5] + ".txt"
+                    testPath = outfileArg + "/Files/" + itemString[2] + "/" + fName[:-5] + ".txt"
                     if not os.path.exists(testPath):
-                        print("\nMissing File:" + testPath)
-                        quit()
+                        raise Exception("Missing File:" + testPath)
                     with open(testPath, "r") as sbnkIDFile:
                         done = False
                         sbnkLines = []
@@ -1025,15 +996,14 @@ if mode == 2:  # Build
                         sbnkSize += 1
                     sbnkHeader[2] = (sbnkSize).to_bytes(4, byteorder='little')
                     sbnkHeader[5] = (sbnkSize - 0x10).to_bytes(4, byteorder='little')
-                    testPath = sysargv[outfileArg] + "/Files/" + itemString[2] + "/" + fName
+                    testPath = outfileArg + "/Files/" + itemString[2] + "/" + fName
                     with open(testPath, "wb") as sbnkFile:
                         for ii, listItem in enumerate(sbnkHeader):
                             sbnkFile.write(listItem)
                         for ii, listItem in enumerate(sbnkData):
                             sbnkFile.write(listItem)
                 else:
-                    print("\nMissing File:" + testPath)
-                    quit()
+                    raise Exception("Missing File:" + testPath)
         curFileLoc = (len(SDAT) + sum(len(tf) for tf in tFileBuffer))
         write_long((curFile * 16) + 12 + fatBlockOffset, curFileLoc)  # write file pointer to the fatBlock
         with open(testPath, "rb") as tempFile:
@@ -1047,7 +1017,7 @@ if mode == 2:  # Build
     write_long(20 + (headeri * 8), (len(SDAT) + sum(len(tf) for tf in tFileBuffer)) - fileBlockOffset)
     write_long(fileBlockOffset + 4, (len(SDAT) + sum(len(tf) for tf in tFileBuffer)) - fileBlockOffset)  # write fileBlock size
     write_long(8, (len(SDAT) + sum(len(tf) for tf in tFileBuffer)))  # write file size
-    with open(sysargv[infileArg], "wb") as outfile:
+    with open(infileArg, "wb") as outfile:
         outfile.write(SDAT)
         for i, tFile in enumerate(tFileBuffer):
             outfile.write(tFile)
