@@ -8,8 +8,6 @@ version = "0.9.2"
 # Unpacks and builds SDAT files
 # Make backups, this can overwrite files without confirmation
 
-ts = time.time()
-
 LONG = -4
 SHORT = -2
 BYTE = -1
@@ -23,7 +21,7 @@ PLAYER2 = 6
 STRM = 7
 FILE = 8
 
-itemString = [
+itemString = (
     "SEQ",
     "SEQARC",
     "BANK",
@@ -33,9 +31,9 @@ itemString = [
     "PLAYER2",
     "STRM",
     "FILE"
-]
+)
 
-itemParamString = [
+itemParamString = (
     "SEQ(name,fileName,?,bnk,vol,cpr,ppr,ply,?[2]){\n",
     "SEQARC(name,fileName,?){\n",
     "BANK(name,fileName,?,wa[4]){\n",
@@ -44,9 +42,9 @@ itemParamString = [
     "GROUP(name,count[type,entries]){\n",
     "PLAYER2(name,count,v[16],reserved[7]){\n",
     "STRM(name,fileName,?,vol,pri,ply,reserved[5]){\n"
-]
+)
 
-itemParams = [
+itemParams = (
     [FILE, SHORT, BANK, BYTE, BYTE, BYTE, PLAYER, BYTE, BYTE],
     [FILE, SHORT],
     [FILE, SHORT, WAVARC, WAVARC, WAVARC, WAVARC],
@@ -55,9 +53,9 @@ itemParams = [
     [LONG],
     [BYTE, BYTE, BYTE, BYTE, BYTE, BYTE, BYTE, BYTE, BYTE, BYTE, BYTE, BYTE, BYTE, BYTE, BYTE, BYTE, BYTE, BYTE, BYTE, BYTE, BYTE, BYTE, BYTE, BYTE],
     [FILE, SHORT, BYTE, BYTE, BYTE, BYTE, BYTE, BYTE, BYTE, BYTE]
-]
+)
 
-itemExt = [
+itemExt = (
     ".sseq",
     ".ssar",
     ".sbnk",
@@ -66,9 +64,9 @@ itemExt = [
     "",
     "",
     ".strm"
-]
+)
 
-itemHeader = [
+itemHeader = (
     b'SSEQ',
     b'SSAR',
     b'SBNK',
@@ -77,7 +75,7 @@ itemHeader = [
     "",
     "",
     b'STRM'
-]
+)
 
 itemOffset = [0, 0, 0, 0, 0, 0, 0, 0, 0]
 itemSymbOffset = [0, 0, 0, 0, 0, 0, 0, 0, 0]
@@ -106,9 +104,9 @@ def read_short(pos):
 def add_fileName(name):
     if name not in names[FILE]:
         if optimize:
-            testPath = outfileArg + "/Files/" + itemString[itemExt.index(name[-5:])] + "/" + name
+            testPath = f"{outfileArg}/Files/{itemString[itemExt.index(name[-5:])]}/{name}"
             if not os.path.exists(testPath):
-                testPath = outfileArg + "/Files/" + name
+                testPath = f"{outfileArg}/Files/{name}"
             if os.path.exists(testPath):
                 tempFile = open(testPath, "rb")
                 tFileBuffer = []
@@ -181,7 +179,7 @@ def get_params(tList):
                 if read_short(SDATPos) == 65535 and listItem == WAVARC:  # unused wavarc slot
                     retString += "NULL"
                 else:
-                    retString += itemString[listItem] + "_" + str(read_short(SDATPos))
+                    retString += f"{itemString[listItem]}_{read_short(SDATPos)}"
             SDATPos += 2
             if listItem == PLAYER:
                 SDATPos -= 1
@@ -312,6 +310,9 @@ if not outfileArg:
 if infileArg == outfileArg:
     raise Exception("Input and output cannot match")
 
+
+ts = time.time()
+
 if not mode:  # Unpack
     print("Unpacking...")
     if not os.path.exists(outfileArg):
@@ -352,20 +353,20 @@ if not mode:  # Unpack
                 SDATPos = itemSymbOffset[i]
                 entries = read_long(SDATPos)
                 if entries > 0:
-                    outfile = open(outfileArg + "/SymbBlock.txt", "w")
-                    outfile.write(itemString[i] + "{\n")
+                    outfile = open(f"{outfileArg}/SymbBlock.txt", "w")
+                    outfile.write(f"{itemString[i]}{{\n")
                 for ii in range(entries):
                     SDATPos = read_long(itemSymbOffset[i] + 4 + (ii * 8)) + symbOffset
                     names[i].append(get_string())
                     if entries > 0:
-                        outfile.write(names[i][len(names[i]) - 1] + "\n")
+                        outfile.write(f"{names[i][len(names[i]) - 1]}\n")
                     SDATPos = read_long(itemSymbOffset[i] + 8 + (ii * 8)) + symbOffset
                     SEQARCSubOffset = SDATPos
                     count = read_long(SDATPos)
                     for x in range(count):
                         SDATPos = read_long(SEQARCSubOffset + 4 + (x * 4)) + symbOffset
                         if entries > 0:
-                            outfile.write("\t" + get_string() + "\n")
+                            outfile.write(f"\t{get_string()}\n")
                 if entries > 0:
                     outfile.write("}\n")
                     outfile.close()
@@ -374,7 +375,7 @@ if not mode:  # Unpack
     SDATPos = infoOffset + 8
     for i in range(8):
         itemOffset[i] = read_long(SDATPos + (i * 4)) + infoOffset
-    with open(outfileArg + "/InfoBlock.txt", "w") as outfile:
+    with open(f"{outfileArg}/InfoBlock.txt", "w") as outfile:
         for i in range(8):
             SDATPos = itemOffset[i]
             outfile.write(itemParamString[i])
@@ -386,15 +387,15 @@ if not mode:  # Unpack
                     if blocks == 4 and ii < len(names[i]):
                         iName = names[i][ii]
                     else:
-                        iName = itemString[i] + "_" + str(ii)
+                        iName = f"{itemString[i]}_{ii}"
                     if i in (SEQ, SEQARC, BANK, WAVARC, STRM):  # These have files
                         fileType.append(i)
                         fileNameID.append(read_short(SDATPos))
                         names[FILE].append(iName)
-                    outfile.write(iName + ", " + get_params(itemParams[i]))
+                    outfile.write(f"{iName}, {get_params(itemParams[i])}")
                     if i == GROUP:
                         for x in range(count):
-                            outfile.write(", " + get_params([LONG, LONG]))
+                            outfile.write(f", {get_params([LONG, LONG])}")
                     outfile.write("\n")
                 else:
                     outfile.write("NULL\n")
@@ -403,32 +404,32 @@ if not mode:  # Unpack
     # FAT Block / File Block
     SDATPos = fatOffset + 8
     entries = read_long(SDATPos)
-    with open(outfileArg + "/FileID.txt", "w") as IDFile:
-        if not os.path.exists(outfileArg + "/Files"):
-            os.makedirs(outfileArg + "/Files")
-        if not os.path.exists(outfileArg + "/Files/" + itemString[0]):
-            os.makedirs(outfileArg + "/Files/" + itemString[0])
-        if not os.path.exists(outfileArg + "/Files/" + itemString[1]):
-            os.makedirs(outfileArg + "/Files/" + itemString[1])
-        if not os.path.exists(outfileArg + "/Files/" + itemString[2]):
-            os.makedirs(outfileArg + "/Files/" + itemString[2])
-        if not os.path.exists(outfileArg + "/Files/" + itemString[3]):
-            os.makedirs(outfileArg + "/Files/" + itemString[3])
-        if not os.path.exists(outfileArg + "/Files/" + itemString[7]):
-            os.makedirs(outfileArg + "/Files/" + itemString[7])
+    with open(f"{outfileArg}/FileID.txt", "w") as IDFile:
+        if not os.path.exists(f"{outfileArg}/Files"):
+            os.makedirs(f"{outfileArg}/Files")
+        if not os.path.exists(f"{outfileArg}/Files/{itemString[0]}"):
+            os.makedirs(f"{outfileArg}/Files/{itemString[0]}")
+        if not os.path.exists(f"{outfileArg}/Files/{itemString[1]}"):
+            os.makedirs(f"{outfileArg}/Files/{itemString[1]}")
+        if not os.path.exists(f"{outfileArg}/Files/{itemString[2]}"):
+            os.makedirs(f"{outfileArg}/Files/{itemString[2]}")
+        if not os.path.exists(f"{outfileArg}/Files/{itemString[3]}"):
+            os.makedirs(f"{outfileArg}/Files/{itemString[3]}")
+        if not os.path.exists(f"{outfileArg}/Files/{itemString[7]}"):
+            os.makedirs(f"{outfileArg}/Files/{itemString[7]}")
         for i in range(entries):
             SDATPos = read_long(fatOffset + 12 + (i * 16))
             tempSize = read_long(fatOffset + 16 + (i * 16))
             done = False
             fileRefID = 0
-            fileHeader = SDAT[SDATPos:SDATPos+4]
+            fileHeader = SDAT[SDATPos:(SDATPos + 4)]
             if fileHeader in itemHeader:
-                tempPath = outfileArg + "/Files/" + itemString[itemHeader.index(fileHeader)] + "/" + "unknown_{0:02X}".format(i)
-                tempName = "unknown_{0:02X}".format(i)
+                tempPath = f"{outfileArg}/Files/{itemString[itemHeader.index(fileHeader)]}/unknown_{i:02}"
+                tempName = f"unknown_{i:02}"
                 tempExt = itemExt[itemHeader.index(fileHeader)]
             else:
-                tempPath = outfileArg + "/Files/unknown_{0:02X}".format(i)
-                tempName = "unknown_{0:02X}".format(i)
+                tempPath = f"{outfileArg}/Files/unknown_{i:02}"
+                tempName = f"unknown_{i:02}"
                 tempExt = ""
             while fileNameID[fileRefID] != i and not done:
                 fileRefID += 1
@@ -436,20 +437,20 @@ if not mode:  # Unpack
                     fileRefID = -1
                     done = True
             if fileRefID != -1:
-                tempPath = outfileArg + "/Files/" + itemString[fileType[fileRefID]] + "/" + names[FILE][fileRefID]
+                tempPath = f"{outfileArg}/Files/{itemString[fileType[fileRefID]]}/{names[FILE][fileRefID]}"
                 tempName = names[FILE][fileRefID]
             if fileHeader == b'SWAR':
                 numSwav = read_long(SDATPos + 0x38)
                 if not os.path.exists(tempPath):
                     os.makedirs(tempPath)
-                with open(tempPath + "/FileID.txt", "w") as swavIDFile:
+                with open(f"{tempPath}/FileID.txt", "w") as swavIDFile:
                     for ii in range(numSwav):
                         swavOffset = SDATPos + read_long(SDATPos + (ii * 4) + 0x3C)
                         swavLength = SDATPos + read_long(SDATPos + ((ii + 1) * 4) + 0x3C)
                         if ii + 1 == numSwav:
-                            swavLength = SDATPos+tempSize
+                            swavLength = SDATPos + tempSize
                         swavSize = swavLength - swavOffset
-                        with open(tempPath + "/" + hex(ii).lstrip("0x").rstrip("L").zfill(2).upper() + ".swav", "wb") as outfile:
+                        with open(f"{tempPath}/{hex(ii).lstrip('0x').rstrip('L').zfill(2).upper()}.swav", "wb") as outfile:
                             outfile.write(b'SWAV')  # Header
                             outfile.write(b'\xFF\xFE\x00\x01')  # magic
                             outfile.write((swavSize + 0x18).to_bytes(4, byteorder='little'))
@@ -457,11 +458,11 @@ if not mode:  # Unpack
                             outfile.write(b'DATA')
                             outfile.write((swavSize + 0x08).to_bytes(4, byteorder='little'))
                             outfile.write(SDAT[swavOffset:swavLength])
-                        swavIDFile.write("{0:02X}.swav\n".format(ii))
+                        swavIDFile.write(f"{ii:02}.swav\n")
             elif fileHeader == b'SBNK':
                 numInst = read_long(SDATPos + 0x38)
                 sbnkEnd = read_long(SDATPos + 0x08) + SDATPos
-                with open(tempPath + ".txt", "w") as sbnkIDFile:
+                with open(f"{tempPath}.txt", "w") as sbnkIDFile:
                     instType = []
                     instOffset = []
                     instOrder = []
@@ -494,7 +495,7 @@ if not mode:  # Unpack
                             if furthestRead < SDATPos + instOffset[instOrder[ii]]:
                                 sbnkIDFile.write("Unused")
                                 while furthestRead < SDATPos + instOffset[instOrder[ii]]:
-                                    sbnkIDFile.write(", " + str(SDAT[furthestRead]))
+                                    sbnkIDFile.write(f", {SDAT[furthestRead]}")
                                     furthestRead += 1
                                 sbnkIDFile.write("\n")
                             sbnkIDFile.write(str(instOrder[ii]))
@@ -507,41 +508,39 @@ if not mode:  # Unpack
                             elif instType[instOrder[ii]] == 4:
                                 sbnkIDFile.write(", PSG3")
                             else:
-                                sbnkIDFile.write(", " + str(instType[instOrder[ii]]))
-                            sbnkIDFile.write(", " + str(read_short(SDATPos + instOffset[instOrder[ii]])))
-                            sbnkIDFile.write(", " + str(read_short(SDATPos + instOffset[instOrder[ii]] + 2)))
-                            sbnkIDFile.write(", " + str(SDAT[SDATPos + instOffset[instOrder[ii]] + 4]))
-                            sbnkIDFile.write(", " + str(SDAT[SDATPos + instOffset[instOrder[ii]] + 5]))
-                            sbnkIDFile.write(", " + str(SDAT[SDATPos + instOffset[instOrder[ii]] + 6]))
-                            sbnkIDFile.write(", " + str(SDAT[SDATPos + instOffset[instOrder[ii]] + 7]))
-                            sbnkIDFile.write(", " + str(SDAT[SDATPos + instOffset[instOrder[ii]] + 8]))
-                            sbnkIDFile.write(", " + str(SDAT[SDATPos + instOffset[instOrder[ii]] + 9]) + "\n")
+                                sbnkIDFile.write(f", {instType[instOrder[ii]]}")
+                            sbnkIDFile.write(f", {read_short(SDATPos + instOffset[instOrder[ii]])}")
+                            sbnkIDFile.write(f", {read_short(SDATPos + instOffset[instOrder[ii]] + 2)}")
+                            sbnkIDFile.write(f", {SDAT[SDATPos + instOffset[instOrder[ii]] + 4]}")
+                            sbnkIDFile.write(f", {SDAT[SDATPos + instOffset[instOrder[ii]] + 5]}")
+                            sbnkIDFile.write(f", {SDAT[SDATPos + instOffset[instOrder[ii]] + 6]}")
+                            sbnkIDFile.write(f", {SDAT[SDATPos + instOffset[instOrder[ii]] + 7]}")
+                            sbnkIDFile.write(f", {SDAT[SDATPos + instOffset[instOrder[ii]] + 8]}")
+                            sbnkIDFile.write(f", {SDAT[SDATPos + instOffset[instOrder[ii]] + 9]}\n")
                             if SDATPos + instOffset[instOrder[ii]] + 9 > furthestRead:
                                 furthestRead = SDATPos + instOffset[instOrder[ii]] + 10
                         elif instType[instOrder[ii]] == 16:
                             if furthestRead < SDATPos + instOffset[instOrder[ii]]:
                                 sbnkIDFile.write("Unused")
                                 while furthestRead < SDATPos + instOffset[instOrder[ii]]:
-                                    sbnkIDFile.write(", " + str(SDAT[furthestRead]))
+                                    sbnkIDFile.write(f", {SDAT[furthestRead]}")
                                     furthestRead += 1
                                 sbnkIDFile.write("\n")
                             sbnkIDFile.write(str(instOrder[ii]))
                             lowNote = SDAT[SDATPos + instOffset[instOrder[ii]]]
                             highNote = SDAT[SDATPos + instOffset[instOrder[ii]] + 1]
-                            sbnkIDFile.write(", Drums")
-                            sbnkIDFile.write(", " + str(lowNote))
-                            sbnkIDFile.write(", " + str(highNote) + "\n")
+                            sbnkIDFile.write(f", Drums, {lowNote}, {highNote}\n")
                             x = 0
                             while read_short(SDATPos + instOffset[instOrder[ii]] + 2 + (x * 12)) == 1 and read_short(SDATPos + instOffset[instOrder[ii]] + 6 + (x * 12)) < 4:
-                                sbnkIDFile.write("\t" + str(read_short(SDATPos + instOffset[instOrder[ii]] + 2 + (x * 12))))
-                                sbnkIDFile.write(", " + str(read_short(SDATPos + instOffset[instOrder[ii]] + 4 + (x * 12))))
-                                sbnkIDFile.write(", " + str(read_short(SDATPos + instOffset[instOrder[ii]] + 6 + (x * 12))))
-                                sbnkIDFile.write(", " + str(SDAT[SDATPos + instOffset[instOrder[ii]] + 8 + (x * 12)]))
-                                sbnkIDFile.write(", " + str(SDAT[SDATPos + instOffset[instOrder[ii]] + 9 + (x * 12)]))
-                                sbnkIDFile.write(", " + str(SDAT[SDATPos + instOffset[instOrder[ii]] + 10 + (x * 12)]))
-                                sbnkIDFile.write(", " + str(SDAT[SDATPos + instOffset[instOrder[ii]] + 11 + (x * 12)]))
-                                sbnkIDFile.write(", " + str(SDAT[SDATPos + instOffset[instOrder[ii]] + 12 + (x * 12)]))
-                                sbnkIDFile.write(", " + str(SDAT[SDATPos + instOffset[instOrder[ii]] + 13 + (x * 12)]) + "\n")
+                                sbnkIDFile.write(f"\t{read_short(SDATPos + instOffset[instOrder[ii]] + 2 + (x * 12))}")
+                                sbnkIDFile.write(f", {read_short(SDATPos + instOffset[instOrder[ii]] + 4 + (x * 12))}")
+                                sbnkIDFile.write(f", {read_short(SDATPos + instOffset[instOrder[ii]] + 6 + (x * 12))}")
+                                sbnkIDFile.write(f", {SDAT[SDATPos + instOffset[instOrder[ii]] + 8 + (x * 12)]}")
+                                sbnkIDFile.write(f", {SDAT[SDATPos + instOffset[instOrder[ii]] + 9 + (x * 12)]}")
+                                sbnkIDFile.write(f", {SDAT[SDATPos + instOffset[instOrder[ii]] + 10 + (x * 12)]}")
+                                sbnkIDFile.write(f", {SDAT[SDATPos + instOffset[instOrder[ii]] + 11 + (x * 12)]}")
+                                sbnkIDFile.write(f", {SDAT[SDATPos + instOffset[instOrder[ii]] + 12 + (x * 12)]}")
+                                sbnkIDFile.write(f", {SDAT[SDATPos + instOffset[instOrder[ii]] + 13 + (x * 12)]}\n")
                                 x += 1
                             x -= 1
                             if SDATPos + instOffset[instOrder[ii]] + 13 + (x * 12) > furthestRead:
@@ -550,7 +549,7 @@ if not mode:  # Unpack
                             if furthestRead < SDATPos + instOffset[instOrder[ii]]:
                                 sbnkIDFile.write("Unused")
                                 while furthestRead < SDATPos + instOffset[instOrder[ii]]:
-                                    sbnkIDFile.write(", " + str(SDAT[furthestRead]))
+                                    sbnkIDFile.write(f", {SDAT[furthestRead]}")
                                     furthestRead += 1
                                 sbnkIDFile.write("\n")
                             sbnkIDFile.write(str(instOrder[ii]))
@@ -559,26 +558,26 @@ if not mode:  # Unpack
                             for x in range(8):
                                 if SDAT[SDATPos + instOffset[instOrder[ii]] + x] > 0:
                                     regions += 1
-                                sbnkIDFile.write(", " + str(SDAT[SDATPos + instOffset[instOrder[ii]] + x]))
+                                sbnkIDFile.write(f", {SDAT[SDATPos + instOffset[instOrder[ii]] + x]}")
                             sbnkIDFile.write("\n")
                             tempOffset = SDATPos + instOffset[instOrder[ii]] + 8
                             for x in range(regions):
-                                sbnkIDFile.write("\t" + str(read_short(SDATPos + instOffset[instOrder[ii]] + 8 + (x * 12))))
-                                sbnkIDFile.write(", " + str(read_short(SDATPos + instOffset[instOrder[ii]] + 10 + (x * 12))))
-                                sbnkIDFile.write(", " + str(read_short(SDATPos + instOffset[instOrder[ii]] + 12 + (x * 12))))
-                                sbnkIDFile.write(", " + str(SDAT[SDATPos + instOffset[instOrder[ii]] + 14 + (x * 12)]))
-                                sbnkIDFile.write(", " + str(SDAT[SDATPos + instOffset[instOrder[ii]] + 15 + (x * 12)]))
-                                sbnkIDFile.write(", " + str(SDAT[SDATPos + instOffset[instOrder[ii]] + 16 + (x * 12)]))
-                                sbnkIDFile.write(", " + str(SDAT[SDATPos + instOffset[instOrder[ii]] + 17 + (x * 12)]))
-                                sbnkIDFile.write(", " + str(SDAT[SDATPos + instOffset[instOrder[ii]] + 18 + (x * 12)]))
-                                sbnkIDFile.write(", " + str(SDAT[SDATPos + instOffset[instOrder[ii]] + 19 + (x * 12)]) + "\n")
+                                sbnkIDFile.write(f"\t{read_short(SDATPos + instOffset[instOrder[ii]] + 8 + (x * 12))}")
+                                sbnkIDFile.write(f", {read_short(SDATPos + instOffset[instOrder[ii]] + 10 + (x * 12))}")
+                                sbnkIDFile.write(f", {read_short(SDATPos + instOffset[instOrder[ii]] + 12 + (x * 12))}")
+                                sbnkIDFile.write(f", {SDAT[SDATPos + instOffset[instOrder[ii]] + 14 + (x * 12)]}")
+                                sbnkIDFile.write(f", {SDAT[SDATPos + instOffset[instOrder[ii]] + 15 + (x * 12)]}")
+                                sbnkIDFile.write(f", {SDAT[SDATPos + instOffset[instOrder[ii]] + 16 + (x * 12)]}")
+                                sbnkIDFile.write(f", {SDAT[SDATPos + instOffset[instOrder[ii]] + 17 + (x * 12)]}")
+                                sbnkIDFile.write(f", {SDAT[SDATPos + instOffset[instOrder[ii]] + 18 + (x * 12)]}")
+                                sbnkIDFile.write(f", {SDAT[SDATPos + instOffset[instOrder[ii]] + 19 + (x * 12)]}\n")
                                 if SDATPos + instOffset[instOrder[ii]] + 19 + (x * 12) > furthestRead:
                                     furthestRead = SDATPos + instOffset[instOrder[ii]] + 20 + (x * 12)
                         lastPointer = instOffset[instOrder[ii]]
                     if furthestRead < sbnkEnd:
                         sbnkIDFile.write("Unused")
                         while furthestRead < sbnkEnd:
-                            sbnkIDFile.write(", " + str(SDAT[furthestRead]))
+                            sbnkIDFile.write(f", {SDAT[furthestRead]}")
                             furthestRead += 1
                         sbnkIDFile.write("\n")
             with open(tempPath + tempExt, "wb") as outfile:
@@ -587,24 +586,23 @@ if not mode:  # Unpack
             IDFile.write(tempName + tempExt)
             if calcMD5:
                 thisMD5 = hashlib.md5(tempFileString)
-                IDFile.write(";MD5 = " + thisMD5.hexdigest())
+                IDFile.write(f";MD5 = {thisMD5.hexdigest()}")
             IDFile.write("\n")
-    ts2 = time.time() - ts
-    print("Done: " + str(ts2) + "s")
+
 
 if mode:  # Build
     print("Building...")
     blocks = 4
     if skipSymbBlock:
         blocks = 3
-    if not os.path.exists(outfileArg + "/FileID.txt"):
+    if not os.path.exists(f"{outfileArg}/FileID.txt"):
         print("\nMissing FileID.txt, files will be ordered as they are in the InfoBlock.\n")
         skipFileOrder = True
-    if not os.path.exists(outfileArg + "/InfoBlock.txt"):
+    if not os.path.exists(f"{outfileArg}/InfoBlock.txt"):
         raise Exception("Missing InfoBlock.txt\n")
 
     if not skipFileOrder:
-        with open(outfileArg + "/FileID.txt", "r") as IDFile:
+        with open(f"{outfileArg}/FileID.txt", "r") as IDFile:
             done = False
             while not done:
                 thisLine = IDFile.readline()
@@ -617,7 +615,7 @@ if mode:  # Build
                 if thisLine != "":
                     names[FILE].append(thisLine)
                     itemCount[FILE] += 1
-    with open(outfileArg + "/InfoBlock.txt", "r") as infoFile:
+    with open(f"{outfileArg}/InfoBlock.txt", "r") as infoFile:
         seqarcSymbSubCount = []  # keep track of how many sub strings are in each seqarc
         for i in range(8):
             done = False
@@ -644,8 +642,8 @@ if mode:  # Build
                                 for ii, param in enumerate(itemParams[i]):
                                     if param >= 0:
                                         namesUsed[param].append(thisLine[ii + 1])
-    if blocks == 4 and os.path.exists(outfileArg + "/SymbBlock.txt"):
-        with open(outfileArg + "/SymbBlock.txt", "r") as symbFile:
+    if blocks == 4 and os.path.exists(f"{outfileArg}/SymbBlock.txt"):
+        with open(f"{outfileArg}/SymbBlock.txt", "r") as symbFile:
             thisLine = ""
             seqarcSymbSubNum = 0
             done = False
@@ -686,7 +684,7 @@ if mode:  # Build
                                 mainSEQARCID = -1
             if mainSEQARCID != -1:
                 seqarcSymbSubCount[mainSEQARCID] = seqarcSymbSubNum
-    with open(outfileArg + "/InfoBlock.txt", "r") as infoFile:
+    with open(f"{outfileArg}/InfoBlock.txt", "r") as infoFile:
         for i in range(8):
             done = False
             params = len(itemParams[i]) + 1
@@ -715,7 +713,7 @@ if mode:  # Build
                                     for ii, number in enumerate(thisLine[1:]):
                                         thisLine[ii + 1] = int(number)  # convert ID to an integer
                                 if len(thisLine) != params:
-                                    raise Exception("" + itemString[i] + " wrong number of parameters.\n")
+                                    raise Exception(f"{itemString[i]} wrong number of parameters.")
                                 if i != GROUP:
                                     thisLine = convert_params(thisLine, itemParams[i])
                                 for ii in range(params):
@@ -852,14 +850,14 @@ if mode:  # Build
     curFile = 0
     tFileBuffer = []
     for i, fName in enumerate(names[FILE]):
-        testPath = outfileArg + "/Files/" + itemString[itemExt.index(fName[-5:])] + "/" + fName
+        testPath = f"{outfileArg}/Files/{itemString[itemExt.index(fName[-5:])]}/{fName}"
         if not os.path.exists(testPath):
-            testPath = outfileArg + "/Files/" + fName
+            testPath = f"{outfileArg}/Files/{fName}"
             if not os.path.exists(testPath):
                 if fName[-5:] == ".swar":  # can the swar be built?
-                    testPath = outfileArg + "/Files/" + itemString[3] + "/" + fName[:-5] + "/FileID.txt"
+                    testPath = f"{outfileArg}/Files/{itemString[3]}/{fName[:-5]}/FileID.txt"
                     if not os.path.exists(testPath):
-                        raise Exception("Missing File:" + testPath)
+                        raise Exception(f"Missing File:{testPath}")
                     with open(testPath, "r") as swavIDFile:
                         done = False
                         swavName = []
@@ -875,12 +873,12 @@ if mode:  # Build
                                 swavName.append(thisLine)
                     swarTemp = []
                     for ii, sName in enumerate(swavName):
-                        testPath = outfileArg + "/Files/" + itemString[3] + "/" + fName[:-5] + "/" + sName
+                        testPath = f"{outfileArg}/Files/{itemString[3]}/{fName[:-5]}/{sName}"
                         if not os.path.exists(testPath):
-                            raise Exception("Missing File:" + testPath)
+                            raise Exception(f"Missing File:{testPath}")
                         with open(testPath, "rb") as tempFile:
                             swarTemp.append(bytearray(tempFile.read()))
-                    testPath = outfileArg + "/Files/" + itemString[3] + "/" + fName
+                    testPath = f"{outfileArg}/Files/{itemString[3]}/{fName}"
                     with open(testPath, "wb") as swarFile:
                         swarSize = sum(len(sf[0x18:]) for sf in swarTemp)
                         swarFile.write(b'SWAR')  # Header
@@ -898,9 +896,9 @@ if mode:  # Build
                         for ii, sFile in enumerate(swarTemp):
                             swarFile.write(sFile[0x18:])
                 elif fName[-5:] == ".sbnk":  # can the sbnk be built?
-                    testPath = outfileArg + "/Files/" + itemString[2] + "/" + fName[:-5] + ".txt"
+                    testPath = f"{outfileArg}/Files/{itemString[2]}/{fName[:-5]}.txt"
                     if not os.path.exists(testPath):
-                        raise Exception("Missing File:" + testPath)
+                        raise Exception(f"Missing File:{testPath}")
                     with open(testPath, "r") as sbnkIDFile:
                         done = False
                         sbnkLines = []
@@ -996,14 +994,14 @@ if mode:  # Build
                         sbnkSize += 1
                     sbnkHeader[2] = (sbnkSize).to_bytes(4, byteorder='little')
                     sbnkHeader[5] = (sbnkSize - 0x10).to_bytes(4, byteorder='little')
-                    testPath = outfileArg + "/Files/" + itemString[2] + "/" + fName
+                    testPath = f"{outfileArg}/Files/{itemString[2]}/{fName}"
                     with open(testPath, "wb") as sbnkFile:
                         for ii, listItem in enumerate(sbnkHeader):
                             sbnkFile.write(listItem)
                         for ii, listItem in enumerate(sbnkData):
                             sbnkFile.write(listItem)
                 else:
-                    raise Exception("Missing File:" + testPath)
+                    raise Exception(f"Missing File:{testPath}")
         curFileLoc = (len(SDAT) + sum(len(tf) for tf in tFileBuffer))
         write_long((curFile * 16) + 12 + fatBlockOffset, curFileLoc)  # write file pointer to the fatBlock
         with open(testPath, "rb") as tempFile:
@@ -1021,5 +1019,7 @@ if mode:  # Build
         outfile.write(SDAT)
         for i, tFile in enumerate(tFileBuffer):
             outfile.write(tFile)
-    ts2 = time.time() - ts
-    print("Done: " + str(ts2) + "s")
+
+
+ts2 = time.time() - ts
+print(f"Done: {ts2}s")
