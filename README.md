@@ -1,5 +1,5 @@
 # SDATTool
-By FroggestSpirit Version 0.9.1
+By FroggestSpirit
 
 Unpack/Pack NDS SDAT Files
 
