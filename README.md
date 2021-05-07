@@ -32,15 +32,10 @@ Un-edited rebuilt SDAT files should be 1:1, if an SDAT is ripped from a game, de
 Un-edited rebuilt SDAT files using the -o flag should work normally in-game, if not please let me know.
 
 
-New in version 0.9.1:
+New in version 0.9.3:
 
--code cleanup
+-preliminary sseq parsing
 
-New in version 0.9.0:
+New in version 0.9.2:
 
--SBNK files now unpack into a txt file, along with the SBNKs. Building will look for a built SBNK first, then if not found, build the SBNK from the text file with the same name
-
-New in version 0.8.0:
-
--SWAR files now unpack in their own directory as SWAVs. Building will look for a built SWAR first, then if not found, build the SWAR from the SWAVs
-
+-optimizations

@@ -4,7 +4,7 @@ import time
 import argparse
 
 # SDAT-Tool by FroggestSpirit
-version = "0.9.2"
+version = "0.9.3"
 # Unpacks and builds SDAT files
 # Make backups, this can overwrite files without confirmation
 
@@ -75,6 +75,100 @@ itemHeader = (
     "",
     "",
     b'STRM'
+)
+
+sseqCmdName = (
+    "Delay",  # 0x80
+    "Instrument",  # 0x81
+    "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "",
+    "",
+    "Pointer",  # 0x93
+    "Jump",  # 0x94
+    "Call",  # 0x95
+    "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "",
+    "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "",
+    "", "", "", "", "", "", "", "", "", "",
+    "Pan",  # 0xC0
+    "Volume",  # 0xC1
+    "MasterVolume",  # 0xC2
+    "Transpose",  # 0xC3
+    "PitchBend",  # 0xC4
+    "PitchBendRange",  # 0xC5
+    "Priority",  # 0xC6
+    "Poly",  # 0xC7
+    "Tie",  # 0xC8
+    "PortamentoControll",  # 0xC9
+    "ModDepth",  # 0xCA
+    "ModSpeed",  # 0xCB
+    "ModType",  # 0xCC
+    "ModRange",  # 0xCD
+    "PortamentoOnOff",  # 0xCE
+    "PortamentoTime",  # 0xCF
+    "Attack",  # 0xD0
+    "Decay",  # 0xD1
+    "Sustain",  # 0xD2
+    "Release",  # 0xD3
+    "LoopStart",  # 0xD4
+    "Expression",  # 0xD5
+    "Print",  # 0xD6
+    "", "", "", "", "", "", "", "", "",
+    "ModDelay",  # 0xE0
+    "Tempo",  # 0xE1
+    "",
+    "PitchSweep",  # 0xE3
+    "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "",
+    "", "", "", "", "", "", "", "",
+    "LoopEnd",  # 0xFC
+    "Return\n",  # 0xFD
+    "TracksUsed",  # 0xFE
+    "TrackEnd\n"  # 0xFF
+)
+
+sseqCmdArgs = (  # -1 for variable length
+    -1,  # 0x80
+    -1,  # 0x81
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0,
+    4,  # 0x93
+    3,  # 0x94
+    3,  # 0x95
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    1,  # 0xC0
+    1,  # 0xC1
+    1,  # 0xC2
+    1,  # 0xC3
+    1,  # 0xC4
+    1,  # 0xC5
+    1,  # 0xC6
+    1,  # 0xC7
+    1,  # 0xC8
+    1,  # 0xC9
+    1,  # 0xCA
+    1,  # 0xCB
+    1,  # 0xCC
+    1,  # 0xCD
+    1,  # 0xCE
+    1,  # 0xCF
+    1,  # 0xD0
+    1,  # 0xD1
+    1,  # 0xD2
+    1,  # 0xD3
+    1,  # 0xD4
+    1,  # 0xD5
+    1,  # 0xD6
+    0, 0, 0, 0, 0, 0, 0, 0, 0,
+    2,  # 0xE0
+    2,  # 0xE1
+    0,
+    2,  # 0xE3
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0,
+    0,  # 0xFC
+    0,  # 0xFD
+    2,  # 0xFE
+    0  # 0xFF
 )
 
 itemOffset = [0, 0, 0, 0, 0, 0, 0, 0, 0]
@@ -580,9 +674,67 @@ if not mode:  # Unpack
                             sbnkIDFile.write(f", {SDAT[furthestRead]}")
                             furthestRead += 1
                         sbnkIDFile.write("\n")
+            elif fileHeader == b'SSEQ':
+                sseqSize = read_long(SDATPos + 0x14)
+                sseqEnd = SDATPos + 16 + sseqSize
+                SDATPos += 0x1C
+                sseqStart = SDATPos
+                with open(f"{tempPath}.txt", "w") as sseqFile:
+                    command = SDAT[SDATPos]
+                    if command == 0xFE:
+                        usedTracks = read_short(SDATPos + 1)
+                        SDATPos += 3
+                        trackOffset = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+                        numTracks = 0
+                        curTrack = 1
+                        while curTrack < 16:
+                            if usedTracks & curTrack:
+                                numTracks += 1
+                            curTrack <<= 1
+                    else:
+                        SDATPos = sseqEnd
+
+                    curTrack = 0
+                    trackOffset[0] = SDATPos  # Workaround to place the first track header
+                    while SDATPos < sseqEnd:
+                        if SDATPos in trackOffset:
+                            sseqFile.write(f"Track_{trackOffset.index(SDATPos) + 1}:\n")
+                        command = SDAT[SDATPos]
+                        SDATPos += 1  # temporary
+                        if command == 0x93:  # Track Pointer
+                            trackInfo = read_long(SDATPos)
+                            trackOffset[trackInfo & 0xFF] = (trackInfo >> 8) + sseqStart
+                            SDATPos += 4
+                        elif command >= 0x80:
+                            commandName = sseqCmdName[command - 0x80]
+                            if commandName == "":
+                                commandName = f"Unknown_0x{hex(command).lstrip('0x').rstrip('L').zfill(2).upper()}"
+                            commandArgLen = sseqCmdArgs[command - 0x80]
+                            if commandArgLen == -1:
+                                commandArgLen = 1
+                                commandArg = (SDAT[SDATPos] & 0x7F)
+                                for i in range(3):
+                                    if SDAT[SDATPos] > 0x7F:
+                                        commandArg <<= 7
+                                        commandArg += (SDAT[SDATPos] & 0x7F)
+                                        SDATPos += 1
+                                        commandArgLen += 1
+                                SDATPos += 1
+                            else:
+                                commandArgMask = 0
+                                for i in range(commandArgLen):
+                                    commandArgMask <<= 8
+                                    commandArgMask += 0xFF
+                                commandArg = (read_long(SDATPos) & commandArgMask)
+                                SDATPos += commandArgLen
+                            if commandArgLen != 0:
+                                sseqFile.write(f"{commandName}:0x{hex(commandArg).lstrip('0x').rstrip('L').zfill(commandArgLen * 2).upper()}\n")
+                            else:
+                                sseqFile.write(f"{commandName}\n")
+                                
             with open(tempPath + tempExt, "wb") as outfile:
-                outfile.write(SDAT[SDATPos:SDATPos+tempSize])
-            tempFileString = SDAT[SDATPos:SDATPos+tempSize]
+                outfile.write(SDAT[SDATPos:(SDATPos + tempSize)])
+            tempFileString = SDAT[SDATPos:(SDATPos + tempSize)]
             IDFile.write(tempName + tempExt)
             if calcMD5:
                 thisMD5 = hashlib.md5(tempFileString)
