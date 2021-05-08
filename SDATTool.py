@@ -77,6 +77,23 @@ itemHeader = (
     b'STRM'
 )
 
+
+sseqNote = (
+    "C_",
+    "C#",
+    "D_",
+    "D#",
+    "E_",
+    "F_",
+    "F#",
+    "G_",
+    "G#",
+    "A_",
+    "A#",
+    "B_",
+)
+
+
 sseqCmdName = (
     "Delay",  # 0x80
     "Instrument",  # 0x81
@@ -679,12 +696,66 @@ if not mode:  # Unpack
                 sseqEnd = SDATPos + 16 + sseqSize
                 SDATPos += 0x1C
                 sseqStart = SDATPos
+
+                # Run through first to calculate labels
+                trackOffset = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+                trackLabel = []
+                trackLabelName = []
+                command = SDAT[SDATPos]
+                if command == 0xFE:
+                    usedTracks = read_short(SDATPos + 1)
+                    SDATPos += 3
+                    numTracks = 0
+                    curTrack = 1
+                    while curTrack < 16:
+                        if usedTracks & curTrack:
+                            numTracks += 1
+                        curTrack <<= 1
+                else:
+                    SDATPos = sseqEnd
+
+                trackOffset[0] = SDATPos  # Workaround to place the first track header
+                while SDATPos < sseqEnd:
+                    command = SDAT[SDATPos]
+                    SDATPos += 1  # temporary
+                    if command == 0x93:  # Track Pointer
+                        trackInfo = read_long(SDATPos)
+                        trackOffset[trackInfo & 0xFF] = (trackInfo >> 8) + sseqStart
+                        SDATPos += 4
+                    elif (command == 0x94) or (command == 0x95):  # Jump or Call
+                        commandArgLen = sseqCmdArgs[command - 0x80]
+                        commandArg = (read_long(SDATPos) & 0xFFFFFF) + sseqStart
+                        if commandArg not in trackLabel:
+                            trackLabel.append(commandArg)
+                            if commandArg not in trackOffset:
+                                trackLabelName.append(f"Label_0x{hex(commandArg).lstrip('0x').rstrip('L').zfill(2).upper()}")
+                            else:
+                                trackLabelName.append(f"Track_{trackOffset.index(commandArg) + 1}")
+                        SDATPos += commandArgLen
+                    elif command >= 0x80:
+                        commandArgLen = sseqCmdArgs[command - 0x80]
+                        if commandArgLen == -1:
+                            for i in range(3):
+                                if SDAT[SDATPos] > 0x7F:
+                                    SDATPos += 1
+                            SDATPos += 1
+                        else:
+                            SDATPos += commandArgLen
+                    else:
+                        SDATPos += 1
+                        for i in range(3):
+                            if SDAT[SDATPos] > 0x7F:
+                                SDATPos += 1
+                        SDATPos += 1
+
+
+                # Re-run through the song now that the labels are defined
+                SDATPos = sseqStart
                 with open(f"{tempPath}.txt", "w") as sseqFile:
                     command = SDAT[SDATPos]
                     if command == 0xFE:
                         usedTracks = read_short(SDATPos + 1)
                         SDATPos += 3
-                        trackOffset = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
                         numTracks = 0
                         curTrack = 1
                         while curTrack < 16:
@@ -699,6 +770,8 @@ if not mode:  # Unpack
                     while SDATPos < sseqEnd:
                         if SDATPos in trackOffset:
                             sseqFile.write(f"Track_{trackOffset.index(SDATPos) + 1}:\n")
+                        elif SDATPos in trackLabel:
+                            sseqFile.write(f"{trackLabelName[trackLabel.index(SDATPos)]}:\n")
                         command = SDAT[SDATPos]
                         SDATPos += 1  # temporary
                         if command == 0x93:  # Track Pointer
@@ -728,10 +801,25 @@ if not mode:  # Unpack
                                 commandArg = (read_long(SDATPos) & commandArgMask)
                                 SDATPos += commandArgLen
                             if commandArgLen != 0:
-                                sseqFile.write(f"{commandName}:0x{hex(commandArg).lstrip('0x').rstrip('L').zfill(commandArgLen * 2).upper()}\n")
+                                if (command == 0x94) or (command == 0x95):  # Jump or Call
+                                    sseqFile.write(f"\t{commandName} {trackLabelName[trackLabel.index(commandArg + sseqStart)]}\n")
+                                else:
+                                    sseqFile.write(f"\t{commandName} {commandArg}\n")
                             else:
-                                sseqFile.write(f"{commandName}\n")
-                                
+                                sseqFile.write(f"\t{commandName}\n")
+                        else:
+                            velocity = SDAT[SDATPos]
+                            SDATPos += 1
+                            commandArg = (SDAT[SDATPos] & 0x7F)
+                            commandArgLen = 1
+                            for i in range(3):
+                                if SDAT[SDATPos] > 0x7F:
+                                    commandArg <<= 7
+                                    commandArg += (SDAT[SDATPos] & 0x7F)
+                                    SDATPos += 1
+                                    commandArgLen += 1
+                            SDATPos += 1
+                            sseqFile.write(f"\t{sseqNote[command % 12]}{int(command / 12)},{velocity},{commandArg}\n")
             with open(tempPath + tempExt, "wb") as outfile:
                 outfile.write(SDAT[SDATPos:(SDATPos + tempSize)])
             tempFileString = SDAT[SDATPos:(SDATPos + tempSize)]
