@@ -12,16 +12,8 @@ Modes:
       -b Build SDAT
 
       -u Unpack SDAT
-      
-      -h Show help
 
 Flags:
-
-      -m Calculate MD5 for unpacked files
-      
-      -o Build Optimized (removes duplicate files by comparing MD5)
-      
-      -ru Build without unused entries (can break games)
       
       -ns Build without a SymbBlock
       
@@ -29,13 +21,11 @@ If only a SDAT file is provided, the output directory will be the same as the SD
 
 Un-edited rebuilt SDAT files should be 1:1, if an SDAT is ripped from a game, decompiled and rebuilt, without being 1:1, please let me know.
 
-Un-edited rebuilt SDAT files using the -o flag should work normally in-game, if not please let me know.
 
+New in version 1.0.0:
 
-New in version 0.9.3:
+-Code overhull and JSON formatting
 
--preliminary sseq parsing
+-Temporarily removed options to optimize SDAT (They will be the next priority)
 
-New in version 0.9.2:
-
--optimizations
+-Fixed SSEQ dumping

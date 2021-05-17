@@ -1,10 +1,13 @@
+#!/usr/bin/python3
+
 import os
 import hashlib
 import time
 import argparse
+import json
 
 # SDAT-Tool by FroggestSpirit
-version = "0.9.3"
+version = "1.0.0"
 # Unpacks and builds SDAT files
 # Make backups, this can overwrite files without confirmation
 
@@ -33,27 +36,267 @@ itemString = (
     "FILE"
 )
 
-itemParamString = (
-    "SEQ(name,fileName,?,bnk,vol,cpr,ppr,ply,?[2]){\n",
-    "SEQARC(name,fileName,?){\n",
-    "BANK(name,fileName,?,wa[4]){\n",
-    "WAVARC(name,fileName,?){\n",
-    "PLAYER(name,?,padding[3],?){\n",
-    "GROUP(name,count[type,entries]){\n",
-    "PLAYER2(name,count,v[16],reserved[7]){\n",
-    "STRM(name,fileName,?,vol,pri,ply,reserved[5]){\n"
-)
+class MyEncoder(json.JSONEncoder):
+    def default(self, o):
+        return o.__dict__
 
-itemParams = (
-    [FILE, SHORT, BANK, BYTE, BYTE, BYTE, PLAYER, BYTE, BYTE],
-    [FILE, SHORT],
-    [FILE, SHORT, WAVARC, WAVARC, WAVARC, WAVARC],
-    [FILE, SHORT],
-    [BYTE, BYTE, BYTE, BYTE, LONG],
-    [LONG],
-    [BYTE, BYTE, BYTE, BYTE, BYTE, BYTE, BYTE, BYTE, BYTE, BYTE, BYTE, BYTE, BYTE, BYTE, BYTE, BYTE, BYTE, BYTE, BYTE, BYTE, BYTE, BYTE, BYTE, BYTE],
-    [FILE, SHORT, BYTE, BYTE, BYTE, BYTE, BYTE, BYTE, BYTE, BYTE]
-)
+class InfoBlock:
+    class SEQInfo:
+        def __init__(self, name, dict=None):
+            if dict:
+                self.name = dict["name"]
+                if self.name != "":
+                    self.fileName = dict["fileName"]
+                    self.unkA = dict["unkA"]
+                    self.bnk = dict["bnk"]
+                    self.vol = dict["vol"]
+                    self.cpr = dict["cpr"]
+                    self.ppr = dict["ppr"]
+                    self.ply = dict["ply"]
+                    self.unkB = dict["unkB"]
+            else:
+                self.name = name
+                if self.name != "":
+                    self.fileName = read_filename()
+                    self.unkA = read_short(None)
+                    self.bnk = read_item_name(BANK)
+                    self.vol = read_byte(None)
+                    self.cpr = read_byte(None)
+                    self.ppr = read_byte(None)
+                    self.ply = read_item_name(PLAYER)
+                    self.unkB = [None] * 2
+                    for i in range(2):
+                        self.unkB[i] = read_byte(None)
+        def write(self):
+            if self.name != "":
+                append_short(names[FILE].index(self.fileName))
+                append_short(self.unkA)
+                append_short([i.name for i in infoBlock.bankInfo].index(self.bnk))
+                append_byte(self.vol)
+                append_byte(self.cpr)
+                append_byte(self.ppr)
+                append_byte([i.name for i in infoBlock.playerInfo].index(self.ply))
+                for i in range(2):
+                    append_byte(self.unkB[i])
+    class SEQARCInfo:
+        def __init__(self, name, dict=None):
+            if dict:
+                self.name = dict["name"]
+                if self.name != "":
+                    self.fileName = dict["fileName"]
+                    self.unkA = dict["unkA"]
+                    self.zippedName = dict["zippedName"]
+            else:
+                self.name = name
+                if self.name != "":
+                    self.fileName = read_filename()
+                    self.unkA = read_short(None)
+                    self.zippedName = None
+        def write(self):
+            if self.name != "":
+                append_short(names[FILE].index(self.fileName))
+                append_short(self.unkA)
+    class BANKInfo:
+        def __init__(self, name, dict=None):
+            if dict:
+                self.name = dict["name"]
+                if self.name != "":
+                    self.fileName = dict["fileName"]
+                    self.unkA = dict["unkA"]
+                    self.wa = dict["wa"]
+            else:
+                self.name = name
+                if self.name != "":
+                    self.fileName = read_filename()
+                    self.unkA = read_short(None)
+                    self.wa = [None] * 4
+                    for i in range(4):
+                        self.wa[i] = read_item_name(WAVARC)
+        def write(self):
+            if self.name != "":
+                append_short(names[FILE].index(self.fileName))
+                append_short(self.unkA)
+                for i in range(4):
+                    if(self.wa[i] == ""):
+                        append_short(0xFFFF)
+                    else:
+                        append_short([i.name for i in infoBlock.wavarcInfo].index(self.wa[i]))
+    class WAVARCInfo:
+        def __init__(self, name, dict=None):
+            if dict:
+                self.name = dict["name"]
+                if self.name != "":
+                    self.fileName = dict["fileName"]
+                    self.unkA = dict["unkA"]
+            else:
+                self.name = name
+                if self.name != "":
+                    self.fileName = read_filename()
+                    self.unkA = read_short(None)
+        def write(self):
+            if self.name != "":
+                append_short(names[FILE].index(self.fileName))
+                append_short(self.unkA)
+    class PLAYERInfo:
+        def __init__(self, name, dict=None):
+            if dict:
+                self.name = dict["name"]
+                if self.name != "":
+                    self.unkA = dict["unkA"]
+                    self.padding = dict["padding"]
+                    self.unkB = dict["unkB"]
+            else:
+                self.name = name
+                if self.name != "":
+                    self.unkA = read_byte(None)
+                    self.padding = [None] * 3
+                    for i in range(3):
+                        self.padding[i] = read_byte(None)
+                    self.unkB = read_long(None)
+        def write(self):
+            if self.name != "":
+                append_byte(self.unkA)
+                for i in range(3):
+                    append_byte(self.padding[i])
+                append_long(self.unkB)
+    class GROUPInfo:
+        def __init__(self, name, dict=None):
+            class SubGROUP:
+                def __init__(self, dict=None):
+                    if dict:
+                        self.type = dict["type"]
+                        self.entry = dict["entry"]
+                    else:
+                        self.type = read_long(None)
+                        self.entry = read_long(None)
+            if dict:
+                self.name = dict["name"]
+                if self.name != "":
+                    self.count = dict["count"]
+                    self.subGroup = []
+                    for i in range(len(dict["subGroup"])):
+                        self.subGroup.append(SubGROUP(dict=dict["subGroup"][i]))
+            else:
+                self.name = name
+                if self.name != "":
+                    self.count = read_long(None)
+                    self.subGroup = [None] * self.count
+                    for i in range(self.count):
+                        self.subGroup[i] = SubGROUP()
+        def write(self):
+            if self.name != "":
+                append_long(self.count)
+                for i in range(self.count):
+                    append_long(self.subGroup[i].type)
+                    append_long(self.subGroup[i].entry)
+    class PLAYER2Info:
+        def __init__(self, name, dict=None):
+            if dict:
+                self.name = dict["name"]
+                if self.name != "":
+                    self.count = dict["count"]
+                    self.v = dict["v"]
+                    self.reserved = dict["reserved"]
+            else:
+                self.name = name
+                if self.name != "":
+                    self.count = read_byte(None)
+                    self.v = [None] * 16
+                    for i in range(16):
+                        self.v[i] = read_byte(None)
+                    self.reserved = [None] * 7
+                    for i in range(7):
+                        self.reserved = read_byte(None)
+        def write(self):
+            if self.name != "":
+                append_byte(self.count)
+                for i in range(16):
+                    append_byte(self.v[i])
+                for i in range(7):
+                    append_byte(self.reserved[i])
+    class STRMInfo:
+        def __init__(self, name, dict=None):
+            if dict:
+                self.name = dict["name"]
+                if self.name != "":
+                    self.fileName = dict["fileName"]
+                    self.unkA = dict["unkA"]
+                    self.vol = dict["vol"]
+                    self.pri = dict["pri"]
+                    self.ply = dict["ply"]
+                    self.reserved = dict["reserved"]
+            else:
+                self.name = name
+                if self.name != "":
+                    self.fileName = read_filename()
+                    self.unkA = read_short(None)
+                    self.vol = read_byte(None)
+                    self.pri = read_byte(None)
+                    self.ply = read_byte(None)
+                    self.reserved = [None] * 5
+                    for i in range(5):
+                        self.reserved = read_byte(None)
+        def write(self):
+            if self.name != "":
+                append_short(names[FILE].index(self.fileName))
+                append_short(self.unkA)
+                append_byte(self.vol)
+                append_byte(self.pri)
+                append_byte(self.ply)
+                for i in range(5):
+                    append_byte(self.reserved[i])
+    def __init__(self):
+        self.seqInfo = []
+        self.seqarcInfo = []
+        self.bankInfo = []
+        self.wavarcInfo = []
+        self.playerInfo = []
+        self.groupInfo = []
+        self.player2Info = []
+        self.strmInfo = []
+    def load(self, infile):
+        for i in range(len(infile["seqInfo"])):
+            self.seqInfo.append(self.SEQInfo(None, dict=infile["seqInfo"][i]))
+        for i in range(len(infile["seqarcInfo"])):
+            self.seqarcInfo.append(self.SEQARCInfo(None, dict=infile["seqarcInfo"][i]))
+        for i in range(len(infile["bankInfo"])):
+            self.bankInfo.append(self.BANKInfo(None, dict=infile["bankInfo"][i]))
+        for i in range(len(infile["wavarcInfo"])):
+            self.wavarcInfo.append(self.WAVARCInfo(None, dict=infile["wavarcInfo"][i]))
+        for i in range(len(infile["playerInfo"])):
+            self.playerInfo.append(self.PLAYERInfo(None, dict=infile["playerInfo"][i]))
+        for i in range(len(infile["groupInfo"])):
+            self.groupInfo.append(self.GROUPInfo(None, dict=infile["groupInfo"][i]))
+        for i in range(len(infile["player2Info"])):
+            self.player2Info.append(self.PLAYER2Info(None, dict=infile["player2Info"][i]))
+        for i in range(len(infile["strmInfo"])):
+            self.strmInfo.append(self.STRMInfo(None, dict=infile["strmInfo"][i]))
+    def write(self, type, index=-1):
+        if index == -1:
+            for i in range(len(type)):
+                type[i].write()
+        else:
+            type[index].write()
+
+class FileBlock:
+    class File:
+        def __init__(self, name, type, dict=None):
+            if dict:
+                self.name = dict["name"]
+                self.type = dict["type"]
+                self.MD5 = dict["MD5"]
+                if "subFile" in dict:
+                    self.subFile = dict["subFile"]
+            else:
+                self.name = name
+                self.type = type
+                self.MD5 = None
+    def __init__(self):
+        self.file = []
+    def load(self, infile):
+        for i in range(len(infile["file"])):
+            self.file.append(self.File(None, None, dict=infile["file"][i]))
+
 
 itemExt = (
     ".sseq",
@@ -77,7 +320,6 @@ itemHeader = (
     b'STRM'
 )
 
-
 sseqNote = (
     "C_",
     "C#",
@@ -92,7 +334,6 @@ sseqNote = (
     "A#",
     "B_",
 )
-
 
 sseqCmdName = (
     "Delay",  # 0x80
@@ -191,195 +432,88 @@ sseqCmdArgs = (  # -1 for variable length
 itemOffset = [0, 0, 0, 0, 0, 0, 0, 0, 0]
 itemSymbOffset = [0, 0, 0, 0, 0, 0, 0, 0, 0]
 itemCount = [0, 0, 0, 0, 0, 0, 0, 0, 0]
-itemData = [[], [], [], [], [], [], [], [], []]
 names = [[], [], [], [], [], [], [], [], []]
-namesUsed = [[], [], [], [], [], [], [], [], []]
 fileType = []
 fileNameID = []
-fileMD5 = []
-fileAll = []
-fileAllMD5 = []
 
 SDAT = bytearray()
 SDATPos = 0
 
-
 def read_long(pos):
-    return int.from_bytes(SDAT[pos:pos + 4], 'little')
-
+    global SDATPos
+    if pos:
+        return int.from_bytes(SDAT[pos:pos + 4], 'little')
+    SDATPos += 4
+    return int.from_bytes(SDAT[SDATPos - 4:SDATPos], 'little')
 
 def read_short(pos):
-    return int.from_bytes(SDAT[pos:pos + 2], 'little')
+    global SDATPos
+    if pos:
+        return int.from_bytes(SDAT[pos:pos + 2], 'little')
+    SDATPos += 2
+    return int.from_bytes(SDAT[SDATPos - 2:SDATPos], 'little')
 
+def read_byte(pos):
+    global SDATPos
+    if pos:
+        return int.from_bytes(SDAT[pos:pos + 1], 'little')
+    SDATPos += 1
+    return int.from_bytes(SDAT[SDATPos - 1:SDATPos], 'little')
 
-def add_fileName(name):
-    if name not in names[FILE]:
-        if optimize:
-            testPath = f"{outfileArg}/Files/{itemString[itemExt.index(name[-5:])]}/{name}"
-            if not os.path.exists(testPath):
-                testPath = f"{outfileArg}/Files/{name}"
-            if os.path.exists(testPath):
-                tempFile = open(testPath, "rb")
-                tFileBuffer = []
-                tFileBuffer = bytearray(tempFile.read())
-                tempFile.close()
-                thisMD5 = hashlib.md5(tFileBuffer)
-                fileAll.append(name)
-                fileAllMD5.append(thisMD5.hexdigest())
-                if thisMD5.hexdigest() not in fileMD5:
-                    itemCount[FILE] += 1
-                    fileMD5.append(thisMD5.hexdigest())
-                    names[FILE].append(name)
-            else:  # can't calculate MD5
-                fileAll.append(name)
-                fileAllMD5.append(itemCount[FILE])
-                fileMD5.append(itemCount[FILE])
-                itemCount[FILE] += 1
-                names[FILE].append(name)
+def read_item_name(listItem):
+    global SDATPos
+    if read_short(SDATPos) < len(names[listItem]):
+        retString = names[listItem][read_short(SDATPos)]
+    else:
+        if read_short(SDATPos) == 65535 and listItem == WAVARC:  # unused wavarc slot
+            retString = ""
         else:
-            itemCount[FILE] += 1
-            names[FILE].append(name)
-
-
-def check_unused(removeFlag, item, string):  # return true to add the item, return false to skip it (unused)
-    if not removeFlag:  # skip this if the build is removing unused entries
-        return True
-    if string == "NULL":  # skip item if null
-        return False
-    if item in (SEQ, SEQARC, GROUP, PLAYER2, STRM):  # None of these get referenced from other items(?), so they should all be included
-        return True
-    if string in namesUsed[item]:
-        return True
-    return False
-
-
-def get_params(tList):
-    global SDAT, SDATPos
-    retString = ""
-    for i, listItem in enumerate(tList):
-        tempString = ""
-        if i > 0:
-            retString += ", "
-        if listItem == BYTE:
-            tempString = str(SDAT[SDATPos])
-            retString += tempString
-            SDATPos += 1
-        elif listItem == SHORT:
-            tempString = str(read_short(SDATPos))
-            retString += tempString
-            SDATPos += 2
-        elif listItem == LONG:
-            tempString = str(read_long(SDATPos))
-            retString += tempString
-            SDATPos += 4
-        elif listItem == FILE:  # point to the file name
-            tempID = read_short(SDATPos)
-            matchID = 0
-            done = False
-            while matchID < len(fileNameID) and not done:
-                if fileNameID[matchID] == tempID:
-                    done = True
-                else:
-                    matchID += 1
-            retString += names[FILE][matchID] + itemExt[fileType[matchID]]
-            SDATPos += 2
-        else:  # point to the name of the item
-            if read_short(SDATPos) < len(names[listItem]):
-                retString += names[listItem][read_short(SDATPos)]
-            else:
-                if read_short(SDATPos) == 65535 and listItem == WAVARC:  # unused wavarc slot
-                    retString += "NULL"
-                else:
-                    retString += f"{itemString[listItem]}_{read_short(SDATPos)}"
-            SDATPos += 2
-            if listItem == PLAYER:
-                SDATPos -= 1
+            retString = f"{itemString[listItem]}_{read_short(SDATPos)}"
+    SDATPos += 2
+    if listItem == PLAYER:
+        SDATPos -= 1
     return retString
 
-
-def convert_params(tArray, tList):
-    retList = []
-    retList.append(tArray[0])
-    for i, listItem in enumerate(tList):
-        if listItem <= BYTE:  # convert to integer
-            retList.append(int(tArray[i + 1]))
-        elif listItem == FILE and optimize:  # check file MD5 for duplicates
-            matchID = 0
-            done = False
-            while matchID < len(fileAll) and not done:
-                if fileAll[matchID] == tArray[i + 1]:
-                    done = True
-                else:
-                    matchID += 1
-            tempMD5 = fileAllMD5[matchID]
-            matchID2 = 0
-            done = False
-            while matchID2 < len(fileMD5) and not done:
-                if fileMD5[matchID2] == tempMD5:
-                    done = True
-                else:
-                    matchID2 += 1
-            retList.append(matchID2)
-        else:  # reference item by string
-            matchID = 0
-            done = False
-            if tArray[i + 1] == "NULL" and listItem == WAVARC:  # unused bank
-                done = True
-                matchID = 65535
-            while matchID < len(names[listItem]) and not done:
-                if names[listItem][matchID] == tArray[i + 1]:
-                    done = True
-                else:
-                    matchID += 1
-            retList.append(matchID)
-    return retList
-
-
-def append_params(item, index, tList):  # append paramerters of an item to SDAT
-    for i, listItem in enumerate(tList):
-        if listItem in (BYTE, PLAYER):  # parameter is an 8-bit write
-            append_byte(itemData[item][index + i + 1])
-        elif listItem == LONG:  # parameter is a 32-bit write
-            append_long(itemData[item][index + i + 1])
-        else:  # parameter is a 16-bit write
-            append_short(itemData[item][index + i + 1])
-
+def read_filename():
+    tempID = read_short(None)
+    matchID = 0
+    done = False
+    while matchID < len(fileNameID) and not done:
+        if fileNameID[matchID] == tempID:
+            done = True
+        else:
+            matchID += 1
+    return names[FILE][matchID] + itemExt[fileType[matchID]]
 
 def append_long(x):  # append a 32bit value to SDAT LSB first
     global SDAT
     SDAT += x.to_bytes(4, 'little')
 
-
 def append_short(x):  # append a 16bit value to SDAT LSB first
     global SDAT
     SDAT += x.to_bytes(2, 'little')
-
 
 def append_byte(x):  # append an 8bit value to SDAT
     global SDAT
     SDAT += x.to_bytes(1, 'little')
 
-
 def write_long(loc, x):  # write a 32bit value to SDAT at position loc LSB first
     global SDAT
     SDAT[loc:loc + 4] = x.to_bytes(4, 'little')
-
 
 def write_short(loc, x):  # write a 16bit value to SDAT at position loc LSB first
     global SDAT
     SDAT[loc:loc + 2] = x.to_bytes(2, 'little')
 
-
 def write_byte(loc, x):  # write an 8bit value to SDAT at position loc
     global SDAT
     SDAT[loc] = x.to_bytes(1, 'little')
-
 
 def get_string():
     global SDAT, SDATPos
     retString = ""
     if SDATPos <= 0x40:
-        return "NULL"
+        return ""
     i = SDAT[SDATPos]
     SDATPos += 1
     while i > 0:
@@ -395,30 +529,25 @@ parser.add_argument("folder", nargs="?")
 mode_grp = parser.add_mutually_exclusive_group(required=True)
 mode_grp.add_argument("-u", "--unpack", dest="mode", action="store_false")
 mode_grp.add_argument("-b", "--build", dest="mode", action="store_true")
-parser.add_argument("-m", "--md5", dest="md5", action="store_true", help="Calculate file MD5 when unpacking")
-parser.add_argument("-o", "--optimize", dest="optimize", action="store_true", help="Build Optimized")
-parser.add_argument("-ru", "--removeUnused", dest="removeUnused", action="store_true", help="Build without unused entries (can break games)")
+#parser.add_argument("-os", "--optimize_size", dest="optimizeSize", action="store_true", help="Build Optimized for filesize")
+#parser.add_argument("-or", "--optimize_ram", dest="optimizeRAM", action="store_true", help="Build Optimized for RAM")
 parser.add_argument("-ns", "--noSymbBlock", dest="noSymbBlock", action="store_true", help="Build without a SymbBlock")
 args = parser.parse_args()
 
 mode = args.mode
 infileArg = args.SDATfile
 outfileArg = args.folder
-calcMD5 = args.md5
-removeUnused = args.removeUnused
-if removeUnused:
-    optimize = True
-    skipFileOrder = True
-else:
-    optimize = args.optimize
-    skipFileOrder = args.optimize
+#optimizeSize = args.optimizeSize
+#optimizeRAM = args.optimizeRAM
 skipSymbBlock = args.noSymbBlock
 
+#if optimizeRAM & optimizeSize:
+#    raise Exception("Cannot optimize for size and RAM")
 if infileArg.lower().find(".sdat") == -1:
     raise Exception("File is not a SDAT file")
 if not outfileArg:
     outfileArg = infileArg.lower().replace(".sdat","")
-if infileArg == outfileArg:
+if infileArg.lower() == outfileArg.lower():
     raise Exception("Input and output cannot match")
 
 
@@ -449,6 +578,8 @@ if not mode:  # Unpack
     fileSize = read_long(SDATPos + 4)
 
     # Symb Block
+    seqarcName = []
+    seqarcNameID = []
     if blocks == 4:
         SDATPos = symbOffset + 8
         for i in range(8):
@@ -463,244 +594,310 @@ if not mode:  # Unpack
             else:
                 SDATPos = itemSymbOffset[i]
                 entries = read_long(SDATPos)
-                if entries > 0:
-                    outfile = open(f"{outfileArg}/SymbBlock.txt", "w")
-                    outfile.write(f"{itemString[i]}{{\n")
                 for ii in range(entries):
                     SDATPos = read_long(itemSymbOffset[i] + 4 + (ii * 8)) + symbOffset
                     names[i].append(get_string())
-                    if entries > 0:
-                        outfile.write(f"{names[i][len(names[i]) - 1]}\n")
                     SDATPos = read_long(itemSymbOffset[i] + 8 + (ii * 8)) + symbOffset
                     SEQARCSubOffset = SDATPos
                     count = read_long(SDATPos)
                     for x in range(count):
                         SDATPos = read_long(SEQARCSubOffset + 4 + (x * 4)) + symbOffset
                         if entries > 0:
-                            outfile.write(f"\t{get_string()}\n")
-                if entries > 0:
-                    outfile.write("}\n")
-                    outfile.close()
+                            seqarcName.append(get_string())
+                            seqarcNameID.append(ii)                            
 
     # Info Block
+    infoBlock = InfoBlock()
     SDATPos = infoOffset + 8
     for i in range(8):
         itemOffset[i] = read_long(SDATPos + (i * 4)) + infoOffset
-    with open(f"{outfileArg}/InfoBlock.txt", "w") as outfile:
-        for i in range(8):
-            SDATPos = itemOffset[i]
-            outfile.write(itemParamString[i])
-            entries = read_long(SDATPos)
-            for ii in range(entries):
-                SDATPos = read_long(itemOffset[i] + 4 + (ii * 4)) + infoOffset
-                if SDATPos - infoOffset > 0x40:
-                    count = read_long(SDATPos)  # count is only used for group
-                    if blocks == 4 and ii < len(names[i]):
-                        iName = names[i][ii]
-                    else:
-                        iName = f"{itemString[i]}_{ii}"
-                    if i in (SEQ, SEQARC, BANK, WAVARC, STRM):  # These have files
-                        fileType.append(i)
-                        fileNameID.append(read_short(SDATPos))
-                        names[FILE].append(iName)
-                    outfile.write(f"{iName}, {get_params(itemParams[i])}")
-                    if i == GROUP:
-                        for x in range(count):
-                            outfile.write(f", {get_params([LONG, LONG])}")
-                    outfile.write("\n")
+    for i in range(8):
+        SDATPos = itemOffset[i]
+        entries = read_long(SDATPos)
+        for ii in range(entries):
+            SDATPos = read_long(itemOffset[i] + 4 + (ii * 4)) + infoOffset
+            if SDATPos - infoOffset > 0x40:
+                count = read_long(SDATPos)  # count is only used for group
+                if blocks == 4 and ii < len(names[i]):
+                    iName = names[i][ii]
                 else:
-                    outfile.write("NULL\n")
-            outfile.write("}\n\n")
+                    iName = f"{itemString[i]}_{ii}"
+                if i in (SEQ, SEQARC, BANK, WAVARC, STRM):  # These have files
+                    fileType.append(i)
+                    fileNameID.append(read_short(SDATPos))
+                    names[FILE].append(iName)
+            else:
+                iName = ""
+            if i == SEQ:
+                infoBlock.seqInfo.append(infoBlock.SEQInfo(iName))
+            elif i == SEQARC:
+                infoBlock.seqarcInfo.append(infoBlock.SEQARCInfo(iName))
+                infoBlock.seqarcInfo[-1].zippedName = [seqarcName[id] for id, num in enumerate(seqarcNameID) if num == ii]
+            elif i == BANK:
+                infoBlock.bankInfo.append(infoBlock.BANKInfo(iName))
+            elif i == WAVARC:
+                infoBlock.wavarcInfo.append(infoBlock.WAVARCInfo(iName))
+            elif i == PLAYER:
+                infoBlock.playerInfo.append(infoBlock.PLAYERInfo(iName))
+            elif i == GROUP:
+                infoBlock.groupInfo.append(infoBlock.GROUPInfo(iName))
+            elif i == PLAYER2:
+                infoBlock.player2Info.append(infoBlock.PLAYER2Info(iName))
+            elif i == STRM:
+                infoBlock.strmInfo.append(infoBlock.STRMInfo(iName))
+    with open(f"{outfileArg}/InfoBlock.json", "w") as outfile:
+        outfile.write(json.dumps(infoBlock, cls=MyEncoder, indent=4)  # make the JSON file pretty at the expense of ugly code
+            .replace(f"\n{' '*16}","")
+            .replace(f"\n{' '*12}]","]")
+            .replace(f"{{{' '*4}",f"\n{' '*16}{{")
+            .replace(f",{' '*4}",", ")
+            .replace(f',"',f",\n{' '*16}\"")
+            .replace(f'["',f"[\n{' '*16}\"")
+            .replace(f'{{\n{" "*12}"name": ""\n{" "*8}}},',f'{{"name": ""}},'))
 
     # FAT Block / File Block
+    fileBlock = FileBlock()
     SDATPos = fatOffset + 8
     entries = read_long(SDATPos)
-    with open(f"{outfileArg}/FileID.txt", "w") as IDFile:
-        if not os.path.exists(f"{outfileArg}/Files"):
-            os.makedirs(f"{outfileArg}/Files")
-        if not os.path.exists(f"{outfileArg}/Files/{itemString[0]}"):
-            os.makedirs(f"{outfileArg}/Files/{itemString[0]}")
-        if not os.path.exists(f"{outfileArg}/Files/{itemString[1]}"):
-            os.makedirs(f"{outfileArg}/Files/{itemString[1]}")
-        if not os.path.exists(f"{outfileArg}/Files/{itemString[2]}"):
-            os.makedirs(f"{outfileArg}/Files/{itemString[2]}")
-        if not os.path.exists(f"{outfileArg}/Files/{itemString[3]}"):
-            os.makedirs(f"{outfileArg}/Files/{itemString[3]}")
-        if not os.path.exists(f"{outfileArg}/Files/{itemString[7]}"):
-            os.makedirs(f"{outfileArg}/Files/{itemString[7]}")
-        for i in range(entries):
-            SDATPos = read_long(fatOffset + 12 + (i * 16))
-            tempSize = read_long(fatOffset + 16 + (i * 16))
-            done = False
-            fileRefID = 0
-            fileHeader = SDAT[SDATPos:(SDATPos + 4)]
-            if fileHeader in itemHeader:
-                tempPath = f"{outfileArg}/Files/{itemString[itemHeader.index(fileHeader)]}/unknown_{i:02}"
-                tempName = f"unknown_{i:02}"
-                tempExt = itemExt[itemHeader.index(fileHeader)]
-            else:
-                tempPath = f"{outfileArg}/Files/unknown_{i:02}"
-                tempName = f"unknown_{i:02}"
-                tempExt = ""
-            while fileNameID[fileRefID] != i and not done:
-                fileRefID += 1
-                if fileRefID >= len(fileNameID):
-                    fileRefID = -1
-                    done = True
-            if fileRefID != -1:
-                tempPath = f"{outfileArg}/Files/{itemString[fileType[fileRefID]]}/{names[FILE][fileRefID]}"
-                tempName = names[FILE][fileRefID]
-            if fileHeader == b'SWAR':
-                numSwav = read_long(SDATPos + 0x38)
-                if not os.path.exists(tempPath):
-                    os.makedirs(tempPath)
-                with open(f"{tempPath}/FileID.txt", "w") as swavIDFile:
-                    for ii in range(numSwav):
-                        swavOffset = SDATPos + read_long(SDATPos + (ii * 4) + 0x3C)
-                        swavLength = SDATPos + read_long(SDATPos + ((ii + 1) * 4) + 0x3C)
-                        if ii + 1 == numSwav:
-                            swavLength = SDATPos + tempSize
-                        swavSize = swavLength - swavOffset
-                        with open(f"{tempPath}/{hex(ii).lstrip('0x').rstrip('L').zfill(2).upper()}.swav", "wb") as outfile:
-                            outfile.write(b'SWAV')  # Header
-                            outfile.write(b'\xFF\xFE\x00\x01')  # magic
-                            outfile.write((swavSize + 0x18).to_bytes(4, byteorder='little'))
-                            outfile.write(b'\x10\x00\x01\x00')  # structure size and blocks
-                            outfile.write(b'DATA')
-                            outfile.write((swavSize + 0x08).to_bytes(4, byteorder='little'))
-                            outfile.write(SDAT[swavOffset:swavLength])
-                        swavIDFile.write(f"{ii:02}.swav\n")
-            elif fileHeader == b'SBNK':
-                numInst = read_long(SDATPos + 0x38)
-                sbnkEnd = read_long(SDATPos + 0x08) + SDATPos
-                with open(f"{tempPath}.txt", "w") as sbnkIDFile:
-                    instType = []
-                    instOffset = []
-                    instOrder = []
-                    instUsed = []
-                    lastPointer = -1  # Because some instruments will point to the same exact definition
-                    furthestRead = SDATPos + 0x3C + (numInst * 4)  # Because someone decided to leave in data that's not pointed to...
-                    for ii in range(numInst):
-                        instType.append(SDAT[SDATPos + 0x3C + (ii * 4)])
-                        instOffset.append(read_short(SDATPos + 0x3C + (ii * 4) + 1))
-                        instOrder.append(-1)
-                        instUsed.append(False)
-                    for ii in range(numInst):  # get the order the data is stored for 1:1 builds
-                        lowestPointer = 0xFFFFFFFF
-                        lowestPointerID = -1
-                        for x in range(numInst):
-                            if not instUsed[x]:
-                                if lowestPointer > instOffset[x]:
-                                    lowestPointer = instOffset[x]
-                                    lowestPointerID = x
-                        instOrder[ii] = lowestPointerID
-                        instUsed[lowestPointerID] = True
-                    for ii in range(numInst):
-                        if instOffset[instOrder[ii]] == lastPointer and lastPointer > 0:
-                            sbnkIDFile.write(str(instOrder[ii]))
-                            sbnkIDFile.write(", SameAsAbove\n")
-                        elif instType[instOrder[ii]] == 0:
-                            sbnkIDFile.write(str(instOrder[ii]))
-                            sbnkIDFile.write(", NULL\n")
-                        elif instType[instOrder[ii]] < 16:
-                            if furthestRead < SDATPos + instOffset[instOrder[ii]]:
-                                sbnkIDFile.write("Unused")
-                                while furthestRead < SDATPos + instOffset[instOrder[ii]]:
-                                    sbnkIDFile.write(f", {SDAT[furthestRead]}")
-                                    furthestRead += 1
-                                sbnkIDFile.write("\n")
-                            sbnkIDFile.write(str(instOrder[ii]))
-                            if instType[instOrder[ii]] == 1:
-                                sbnkIDFile.write(", Single")
-                            elif instType[instOrder[ii]] == 2:
-                                sbnkIDFile.write(", PSG1")
-                            elif instType[instOrder[ii]] == 3:
-                                sbnkIDFile.write(", PSG2")
-                            elif instType[instOrder[ii]] == 4:
-                                sbnkIDFile.write(", PSG3")
-                            else:
-                                sbnkIDFile.write(f", {instType[instOrder[ii]]}")
-                            sbnkIDFile.write(f", {read_short(SDATPos + instOffset[instOrder[ii]])}")
-                            sbnkIDFile.write(f", {read_short(SDATPos + instOffset[instOrder[ii]] + 2)}")
-                            sbnkIDFile.write(f", {SDAT[SDATPos + instOffset[instOrder[ii]] + 4]}")
-                            sbnkIDFile.write(f", {SDAT[SDATPos + instOffset[instOrder[ii]] + 5]}")
-                            sbnkIDFile.write(f", {SDAT[SDATPos + instOffset[instOrder[ii]] + 6]}")
-                            sbnkIDFile.write(f", {SDAT[SDATPos + instOffset[instOrder[ii]] + 7]}")
-                            sbnkIDFile.write(f", {SDAT[SDATPos + instOffset[instOrder[ii]] + 8]}")
-                            sbnkIDFile.write(f", {SDAT[SDATPos + instOffset[instOrder[ii]] + 9]}\n")
-                            if SDATPos + instOffset[instOrder[ii]] + 9 > furthestRead:
-                                furthestRead = SDATPos + instOffset[instOrder[ii]] + 10
-                        elif instType[instOrder[ii]] == 16:
-                            if furthestRead < SDATPos + instOffset[instOrder[ii]]:
-                                sbnkIDFile.write("Unused")
-                                while furthestRead < SDATPos + instOffset[instOrder[ii]]:
-                                    sbnkIDFile.write(f", {SDAT[furthestRead]}")
-                                    furthestRead += 1
-                                sbnkIDFile.write("\n")
-                            sbnkIDFile.write(str(instOrder[ii]))
-                            lowNote = SDAT[SDATPos + instOffset[instOrder[ii]]]
-                            highNote = SDAT[SDATPos + instOffset[instOrder[ii]] + 1]
-                            sbnkIDFile.write(f", Drums, {lowNote}, {highNote}\n")
-                            x = 0
-                            while read_short(SDATPos + instOffset[instOrder[ii]] + 2 + (x * 12)) == 1 and read_short(SDATPos + instOffset[instOrder[ii]] + 6 + (x * 12)) < 4:
-                                sbnkIDFile.write(f"\t{read_short(SDATPos + instOffset[instOrder[ii]] + 2 + (x * 12))}")
-                                sbnkIDFile.write(f", {read_short(SDATPos + instOffset[instOrder[ii]] + 4 + (x * 12))}")
-                                sbnkIDFile.write(f", {read_short(SDATPos + instOffset[instOrder[ii]] + 6 + (x * 12))}")
-                                sbnkIDFile.write(f", {SDAT[SDATPos + instOffset[instOrder[ii]] + 8 + (x * 12)]}")
-                                sbnkIDFile.write(f", {SDAT[SDATPos + instOffset[instOrder[ii]] + 9 + (x * 12)]}")
-                                sbnkIDFile.write(f", {SDAT[SDATPos + instOffset[instOrder[ii]] + 10 + (x * 12)]}")
-                                sbnkIDFile.write(f", {SDAT[SDATPos + instOffset[instOrder[ii]] + 11 + (x * 12)]}")
-                                sbnkIDFile.write(f", {SDAT[SDATPos + instOffset[instOrder[ii]] + 12 + (x * 12)]}")
-                                sbnkIDFile.write(f", {SDAT[SDATPos + instOffset[instOrder[ii]] + 13 + (x * 12)]}\n")
-                                x += 1
-                            x -= 1
-                            if SDATPos + instOffset[instOrder[ii]] + 13 + (x * 12) > furthestRead:
-                                furthestRead = SDATPos + instOffset[instOrder[ii]] + 14 + (x * 12)
-                        elif instType[instOrder[ii]] == 17:
-                            if furthestRead < SDATPos + instOffset[instOrder[ii]]:
-                                sbnkIDFile.write("Unused")
-                                while furthestRead < SDATPos + instOffset[instOrder[ii]]:
-                                    sbnkIDFile.write(f", {SDAT[furthestRead]}")
-                                    furthestRead += 1
-                                sbnkIDFile.write("\n")
-                            sbnkIDFile.write(str(instOrder[ii]))
-                            regions = 0
-                            sbnkIDFile.write(", Keysplit")
-                            for x in range(8):
-                                if SDAT[SDATPos + instOffset[instOrder[ii]] + x] > 0:
-                                    regions += 1
-                                sbnkIDFile.write(f", {SDAT[SDATPos + instOffset[instOrder[ii]] + x]}")
+    if not os.path.exists(f"{outfileArg}/Files"):
+        os.makedirs(f"{outfileArg}/Files")
+    if not os.path.exists(f"{outfileArg}/Files/{itemString[0]}"):
+        os.makedirs(f"{outfileArg}/Files/{itemString[0]}")
+    if not os.path.exists(f"{outfileArg}/Files/{itemString[1]}"):
+        os.makedirs(f"{outfileArg}/Files/{itemString[1]}")
+    if not os.path.exists(f"{outfileArg}/Files/{itemString[2]}"):
+        os.makedirs(f"{outfileArg}/Files/{itemString[2]}")
+    if not os.path.exists(f"{outfileArg}/Files/{itemString[3]}"):
+        os.makedirs(f"{outfileArg}/Files/{itemString[3]}")
+    if not os.path.exists(f"{outfileArg}/Files/{itemString[7]}"):
+        os.makedirs(f"{outfileArg}/Files/{itemString[7]}")
+    for i in range(entries):
+        SDATPos = read_long(fatOffset + 12 + (i * 16))
+        tempSize = read_long(fatOffset + 16 + (i * 16))
+        done = False
+        fileRefID = 0
+        fileHeader = SDAT[SDATPos:(SDATPos + 4)]
+        if fileHeader in itemHeader:
+            tempPath = f"{outfileArg}/Files/{itemString[itemHeader.index(fileHeader)]}/unknown_{i:02}"
+            tempName = f"unknown_{i:02}"
+            tempExt = itemExt[itemHeader.index(fileHeader)]
+            tempType = itemString[itemHeader.index(fileHeader)]
+        else:
+            tempPath = f"{outfileArg}/Files/unknown_{i:02}"
+            tempName = f"unknown_{i:02}"
+            tempExt = ""
+            tempType = ""
+        while fileNameID[fileRefID] != i and not done:
+            fileRefID += 1
+            if fileRefID >= len(fileNameID):
+                fileRefID = -1
+                done = True
+        if fileRefID != -1:
+            tempPath = f"{outfileArg}/Files/{itemString[fileType[fileRefID]]}/{names[FILE][fileRefID]}"
+            tempName = names[FILE][fileRefID]
+        fileBlock.file.append(FileBlock.File(f"{tempName}{tempExt}", tempType))
+        if fileHeader == b'SWAR':
+            numSwav = read_long(SDATPos + 0x38)
+            fileBlock.file[-1].subFile = []
+            if not os.path.exists(tempPath):
+                os.makedirs(tempPath)
+            for ii in range(numSwav):
+                fileBlock.file[-1].subFile.append(f"{hex(ii).lstrip('0x').rstrip('L').zfill(2).upper()}.swav")
+                swavOffset = SDATPos + read_long(SDATPos + (ii * 4) + 0x3C)
+                swavLength = SDATPos + read_long(SDATPos + ((ii + 1) * 4) + 0x3C)
+                if ii + 1 == numSwav:
+                    swavLength = SDATPos + tempSize
+                swavSize = swavLength - swavOffset
+                with open(f"{tempPath}/{hex(ii).lstrip('0x').rstrip('L').zfill(2).upper()}.swav", "wb") as outfile:
+                    outfile.write(b'SWAV')  # Header
+                    outfile.write(b'\xFF\xFE\x00\x01')  # magic
+                    outfile.write((swavSize + 0x18).to_bytes(4, byteorder='little'))
+                    outfile.write(b'\x10\x00\x01\x00')  # structure size and blocks
+                    outfile.write(b'DATA')
+                    outfile.write((swavSize + 0x08).to_bytes(4, byteorder='little'))
+                    outfile.write(SDAT[swavOffset:swavLength])
+        elif fileHeader == b'SBNK':
+            numInst = read_long(SDATPos + 0x38)
+            sbnkEnd = read_long(SDATPos + 0x08) + SDATPos
+            with open(f"{tempPath}.txt", "w") as sbnkIDFile:
+                instType = []
+                instOffset = []
+                instOrder = []
+                instUsed = []
+                lastPointer = -1  # Because some instruments will point to the same exact definition
+                furthestRead = SDATPos + 0x3C + (numInst * 4)  # Because someone decided to leave in data that's not pointed to...
+                for ii in range(numInst):
+                    instType.append(SDAT[SDATPos + 0x3C + (ii * 4)])
+                    instOffset.append(read_short(SDATPos + 0x3C + (ii * 4) + 1))
+                    instOrder.append(-1)
+                    instUsed.append(False)
+                for ii in range(numInst):  # get the order the data is stored for 1:1 builds
+                    lowestPointer = 0xFFFFFFFF
+                    lowestPointerID = -1
+                    for x in range(numInst):
+                        if not instUsed[x]:
+                            if lowestPointer > instOffset[x]:
+                                lowestPointer = instOffset[x]
+                                lowestPointerID = x
+                    instOrder[ii] = lowestPointerID
+                    instUsed[lowestPointerID] = True
+                for ii in range(numInst):
+                    if instOffset[instOrder[ii]] == lastPointer and lastPointer > 0:
+                        sbnkIDFile.write(str(instOrder[ii]))
+                        sbnkIDFile.write(", SameAsAbove\n")
+                    elif instType[instOrder[ii]] == 0:
+                        sbnkIDFile.write(str(instOrder[ii]))
+                        sbnkIDFile.write(", NULL\n")
+                    elif instType[instOrder[ii]] < 16:
+                        if furthestRead < SDATPos + instOffset[instOrder[ii]]:
+                            sbnkIDFile.write("Unused")
+                            while furthestRead < SDATPos + instOffset[instOrder[ii]]:
+                                sbnkIDFile.write(f", {SDAT[furthestRead]}")
+                                furthestRead += 1
                             sbnkIDFile.write("\n")
-                            tempOffset = SDATPos + instOffset[instOrder[ii]] + 8
-                            for x in range(regions):
-                                sbnkIDFile.write(f"\t{read_short(SDATPos + instOffset[instOrder[ii]] + 8 + (x * 12))}")
-                                sbnkIDFile.write(f", {read_short(SDATPos + instOffset[instOrder[ii]] + 10 + (x * 12))}")
-                                sbnkIDFile.write(f", {read_short(SDATPos + instOffset[instOrder[ii]] + 12 + (x * 12))}")
-                                sbnkIDFile.write(f", {SDAT[SDATPos + instOffset[instOrder[ii]] + 14 + (x * 12)]}")
-                                sbnkIDFile.write(f", {SDAT[SDATPos + instOffset[instOrder[ii]] + 15 + (x * 12)]}")
-                                sbnkIDFile.write(f", {SDAT[SDATPos + instOffset[instOrder[ii]] + 16 + (x * 12)]}")
-                                sbnkIDFile.write(f", {SDAT[SDATPos + instOffset[instOrder[ii]] + 17 + (x * 12)]}")
-                                sbnkIDFile.write(f", {SDAT[SDATPos + instOffset[instOrder[ii]] + 18 + (x * 12)]}")
-                                sbnkIDFile.write(f", {SDAT[SDATPos + instOffset[instOrder[ii]] + 19 + (x * 12)]}\n")
-                                if SDATPos + instOffset[instOrder[ii]] + 19 + (x * 12) > furthestRead:
-                                    furthestRead = SDATPos + instOffset[instOrder[ii]] + 20 + (x * 12)
-                        lastPointer = instOffset[instOrder[ii]]
-                    if furthestRead < sbnkEnd:
-                        sbnkIDFile.write("Unused")
-                        while furthestRead < sbnkEnd:
-                            sbnkIDFile.write(f", {SDAT[furthestRead]}")
-                            furthestRead += 1
+                        sbnkIDFile.write(str(instOrder[ii]))
+                        if instType[instOrder[ii]] == 1:
+                            sbnkIDFile.write(", Single")
+                        elif instType[instOrder[ii]] == 2:
+                            sbnkIDFile.write(", PSG1")
+                        elif instType[instOrder[ii]] == 3:
+                            sbnkIDFile.write(", PSG2")
+                        elif instType[instOrder[ii]] == 4:
+                            sbnkIDFile.write(", PSG3")
+                        else:
+                            sbnkIDFile.write(f", {instType[instOrder[ii]]}")
+                        sbnkIDFile.write(f", {read_short(SDATPos + instOffset[instOrder[ii]])}")
+                        sbnkIDFile.write(f", {read_short(SDATPos + instOffset[instOrder[ii]] + 2)}")
+                        sbnkIDFile.write(f", {SDAT[SDATPos + instOffset[instOrder[ii]] + 4]}")
+                        sbnkIDFile.write(f", {SDAT[SDATPos + instOffset[instOrder[ii]] + 5]}")
+                        sbnkIDFile.write(f", {SDAT[SDATPos + instOffset[instOrder[ii]] + 6]}")
+                        sbnkIDFile.write(f", {SDAT[SDATPos + instOffset[instOrder[ii]] + 7]}")
+                        sbnkIDFile.write(f", {SDAT[SDATPos + instOffset[instOrder[ii]] + 8]}")
+                        sbnkIDFile.write(f", {SDAT[SDATPos + instOffset[instOrder[ii]] + 9]}\n")
+                        if SDATPos + instOffset[instOrder[ii]] + 9 > furthestRead:
+                            furthestRead = SDATPos + instOffset[instOrder[ii]] + 10
+                    elif instType[instOrder[ii]] == 16:
+                        if furthestRead < SDATPos + instOffset[instOrder[ii]]:
+                            sbnkIDFile.write("Unused")
+                            while furthestRead < SDATPos + instOffset[instOrder[ii]]:
+                                sbnkIDFile.write(f", {SDAT[furthestRead]}")
+                                furthestRead += 1
+                            sbnkIDFile.write("\n")
+                        sbnkIDFile.write(str(instOrder[ii]))
+                        lowNote = SDAT[SDATPos + instOffset[instOrder[ii]]]
+                        highNote = SDAT[SDATPos + instOffset[instOrder[ii]] + 1]
+                        sbnkIDFile.write(f", Drums, {lowNote}, {highNote}\n")
+                        x = 0
+                        while read_short(SDATPos + instOffset[instOrder[ii]] + 2 + (x * 12)) == 1 and read_short(SDATPos + instOffset[instOrder[ii]] + 6 + (x * 12)) < 4:
+                            sbnkIDFile.write(f"\t{read_short(SDATPos + instOffset[instOrder[ii]] + 2 + (x * 12))}")
+                            sbnkIDFile.write(f", {read_short(SDATPos + instOffset[instOrder[ii]] + 4 + (x * 12))}")
+                            sbnkIDFile.write(f", {read_short(SDATPos + instOffset[instOrder[ii]] + 6 + (x * 12))}")
+                            sbnkIDFile.write(f", {SDAT[SDATPos + instOffset[instOrder[ii]] + 8 + (x * 12)]}")
+                            sbnkIDFile.write(f", {SDAT[SDATPos + instOffset[instOrder[ii]] + 9 + (x * 12)]}")
+                            sbnkIDFile.write(f", {SDAT[SDATPos + instOffset[instOrder[ii]] + 10 + (x * 12)]}")
+                            sbnkIDFile.write(f", {SDAT[SDATPos + instOffset[instOrder[ii]] + 11 + (x * 12)]}")
+                            sbnkIDFile.write(f", {SDAT[SDATPos + instOffset[instOrder[ii]] + 12 + (x * 12)]}")
+                            sbnkIDFile.write(f", {SDAT[SDATPos + instOffset[instOrder[ii]] + 13 + (x * 12)]}\n")
+                            x += 1
+                        x -= 1
+                        if SDATPos + instOffset[instOrder[ii]] + 13 + (x * 12) > furthestRead:
+                            furthestRead = SDATPos + instOffset[instOrder[ii]] + 14 + (x * 12)
+                    elif instType[instOrder[ii]] == 17:
+                        if furthestRead < SDATPos + instOffset[instOrder[ii]]:
+                            sbnkIDFile.write("Unused")
+                            while furthestRead < SDATPos + instOffset[instOrder[ii]]:
+                                sbnkIDFile.write(f", {SDAT[furthestRead]}")
+                                furthestRead += 1
+                            sbnkIDFile.write("\n")
+                        sbnkIDFile.write(str(instOrder[ii]))
+                        regions = 0
+                        sbnkIDFile.write(", Keysplit")
+                        for x in range(8):
+                            if SDAT[SDATPos + instOffset[instOrder[ii]] + x] > 0:
+                                regions += 1
+                            sbnkIDFile.write(f", {SDAT[SDATPos + instOffset[instOrder[ii]] + x]}")
                         sbnkIDFile.write("\n")
-            elif fileHeader == b'SSEQ':
-                sseqSize = read_long(SDATPos + 0x14)
-                sseqEnd = SDATPos + 16 + sseqSize
-                SDATPos += 0x1C
-                sseqStart = SDATPos
+                        tempOffset = SDATPos + instOffset[instOrder[ii]] + 8
+                        for x in range(regions):
+                            sbnkIDFile.write(f"\t{read_short(SDATPos + instOffset[instOrder[ii]] + 8 + (x * 12))}")
+                            sbnkIDFile.write(f", {read_short(SDATPos + instOffset[instOrder[ii]] + 10 + (x * 12))}")
+                            sbnkIDFile.write(f", {read_short(SDATPos + instOffset[instOrder[ii]] + 12 + (x * 12))}")
+                            sbnkIDFile.write(f", {SDAT[SDATPos + instOffset[instOrder[ii]] + 14 + (x * 12)]}")
+                            sbnkIDFile.write(f", {SDAT[SDATPos + instOffset[instOrder[ii]] + 15 + (x * 12)]}")
+                            sbnkIDFile.write(f", {SDAT[SDATPos + instOffset[instOrder[ii]] + 16 + (x * 12)]}")
+                            sbnkIDFile.write(f", {SDAT[SDATPos + instOffset[instOrder[ii]] + 17 + (x * 12)]}")
+                            sbnkIDFile.write(f", {SDAT[SDATPos + instOffset[instOrder[ii]] + 18 + (x * 12)]}")
+                            sbnkIDFile.write(f", {SDAT[SDATPos + instOffset[instOrder[ii]] + 19 + (x * 12)]}\n")
+                            if SDATPos + instOffset[instOrder[ii]] + 19 + (x * 12) > furthestRead:
+                                furthestRead = SDATPos + instOffset[instOrder[ii]] + 20 + (x * 12)
+                    lastPointer = instOffset[instOrder[ii]]
+                if furthestRead < sbnkEnd:
+                    sbnkIDFile.write("Unused")
+                    while furthestRead < sbnkEnd:
+                        sbnkIDFile.write(f", {SDAT[furthestRead]}")
+                        furthestRead += 1
+                    sbnkIDFile.write("\n")
+        elif fileHeader == b'SSEQ':
+            sseqSize = read_long(SDATPos + 0x14)
+            sseqEnd = SDATPos + 16 + sseqSize
+            SDATPos += 0x1C
+            sseqStart = SDATPos
 
-                # Run through first to calculate labels
-                trackOffset = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-                trackLabel = []
-                trackLabelName = []
+            # Run through first to calculate labels
+            trackOffset = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+            trackLabel = []
+            trackLabelName = []
+            command = SDAT[SDATPos]
+            if command == 0xFE:
+                usedTracks = read_short(SDATPos + 1)
+                SDATPos += 3
+                numTracks = 0
+                curTrack = 1
+                while curTrack < 16:
+                    if usedTracks & curTrack:
+                        numTracks += 1
+                    curTrack <<= 1
+            else:
+                SDATPos = sseqEnd
+
+            trackOffset[0] = SDATPos  # Workaround to place the first track header
+            while SDATPos < sseqEnd:
+                command = SDAT[SDATPos]
+                SDATPos += 1  # temporary
+                if command == 0x93:  # Track Pointer
+                    trackInfo = read_long(SDATPos)
+                    trackOffset[trackInfo & 0xFF] = (trackInfo >> 8) + sseqStart
+                    SDATPos += 4
+                elif (command == 0x94) or (command == 0x95):  # Jump or Call
+                    commandArgLen = sseqCmdArgs[command - 0x80]
+                    commandArg = (read_long(SDATPos) & 0xFFFFFF) + sseqStart
+                    if commandArg not in trackLabel:
+                        trackLabel.append(commandArg)
+                        if commandArg not in trackOffset:
+                            trackLabelName.append(f"Label_0x{hex(commandArg).lstrip('0x').rstrip('L').zfill(2).upper()}")
+                        else:
+                            trackLabelName.append(f"Track_{trackOffset.index(commandArg) + 1}")
+                    SDATPos += commandArgLen
+                elif command >= 0x80:
+                    commandArgLen = sseqCmdArgs[command - 0x80]
+                    if commandArgLen == -1:
+                        for i in range(3):
+                            if SDAT[SDATPos] > 0x7F:
+                                SDATPos += 1
+                        SDATPos += 1
+                    else:
+                        SDATPos += commandArgLen
+                else:
+                    SDATPos += 1
+                    for i in range(3):
+                        if SDAT[SDATPos] > 0x7F:
+                            SDATPos += 1
+                    SDATPos += 1
+
+
+            # Re-run through the song now that the labels are defined
+            SDATPos = sseqStart
+            with open(f"{tempPath}.txt", "w") as sseqFile:
                 command = SDAT[SDATPos]
                 if command == 0xFE:
                     usedTracks = read_short(SDATPos + 1)
@@ -714,104 +911,27 @@ if not mode:  # Unpack
                 else:
                     SDATPos = sseqEnd
 
+                curTrack = 0
                 trackOffset[0] = SDATPos  # Workaround to place the first track header
                 while SDATPos < sseqEnd:
+                    if SDATPos in trackOffset:
+                        sseqFile.write(f"Track_{trackOffset.index(SDATPos) + 1}:\n")
+                    elif SDATPos in trackLabel:
+                        sseqFile.write(f"{trackLabelName[trackLabel.index(SDATPos)]}:\n")
                     command = SDAT[SDATPos]
                     SDATPos += 1  # temporary
                     if command == 0x93:  # Track Pointer
                         trackInfo = read_long(SDATPos)
                         trackOffset[trackInfo & 0xFF] = (trackInfo >> 8) + sseqStart
                         SDATPos += 4
-                    elif (command == 0x94) or (command == 0x95):  # Jump or Call
-                        commandArgLen = sseqCmdArgs[command - 0x80]
-                        commandArg = (read_long(SDATPos) & 0xFFFFFF) + sseqStart
-                        if commandArg not in trackLabel:
-                            trackLabel.append(commandArg)
-                            if commandArg not in trackOffset:
-                                trackLabelName.append(f"Label_0x{hex(commandArg).lstrip('0x').rstrip('L').zfill(2).upper()}")
-                            else:
-                                trackLabelName.append(f"Track_{trackOffset.index(commandArg) + 1}")
-                        SDATPos += commandArgLen
                     elif command >= 0x80:
+                        commandName = sseqCmdName[command - 0x80]
+                        if commandName == "":
+                            commandName = f"Unknown_0x{hex(command).lstrip('0x').rstrip('L').zfill(2).upper()}"
                         commandArgLen = sseqCmdArgs[command - 0x80]
                         if commandArgLen == -1:
-                            for i in range(3):
-                                if SDAT[SDATPos] > 0x7F:
-                                    SDATPos += 1
-                            SDATPos += 1
-                        else:
-                            SDATPos += commandArgLen
-                    else:
-                        SDATPos += 1
-                        for i in range(3):
-                            if SDAT[SDATPos] > 0x7F:
-                                SDATPos += 1
-                        SDATPos += 1
-
-
-                # Re-run through the song now that the labels are defined
-                SDATPos = sseqStart
-                with open(f"{tempPath}.txt", "w") as sseqFile:
-                    command = SDAT[SDATPos]
-                    if command == 0xFE:
-                        usedTracks = read_short(SDATPos + 1)
-                        SDATPos += 3
-                        numTracks = 0
-                        curTrack = 1
-                        while curTrack < 16:
-                            if usedTracks & curTrack:
-                                numTracks += 1
-                            curTrack <<= 1
-                    else:
-                        SDATPos = sseqEnd
-
-                    curTrack = 0
-                    trackOffset[0] = SDATPos  # Workaround to place the first track header
-                    while SDATPos < sseqEnd:
-                        if SDATPos in trackOffset:
-                            sseqFile.write(f"Track_{trackOffset.index(SDATPos) + 1}:\n")
-                        elif SDATPos in trackLabel:
-                            sseqFile.write(f"{trackLabelName[trackLabel.index(SDATPos)]}:\n")
-                        command = SDAT[SDATPos]
-                        SDATPos += 1  # temporary
-                        if command == 0x93:  # Track Pointer
-                            trackInfo = read_long(SDATPos)
-                            trackOffset[trackInfo & 0xFF] = (trackInfo >> 8) + sseqStart
-                            SDATPos += 4
-                        elif command >= 0x80:
-                            commandName = sseqCmdName[command - 0x80]
-                            if commandName == "":
-                                commandName = f"Unknown_0x{hex(command).lstrip('0x').rstrip('L').zfill(2).upper()}"
-                            commandArgLen = sseqCmdArgs[command - 0x80]
-                            if commandArgLen == -1:
-                                commandArgLen = 1
-                                commandArg = (SDAT[SDATPos] & 0x7F)
-                                for i in range(3):
-                                    if SDAT[SDATPos] > 0x7F:
-                                        commandArg <<= 7
-                                        commandArg += (SDAT[SDATPos] & 0x7F)
-                                        SDATPos += 1
-                                        commandArgLen += 1
-                                SDATPos += 1
-                            else:
-                                commandArgMask = 0
-                                for i in range(commandArgLen):
-                                    commandArgMask <<= 8
-                                    commandArgMask += 0xFF
-                                commandArg = (read_long(SDATPos) & commandArgMask)
-                                SDATPos += commandArgLen
-                            if commandArgLen != 0:
-                                if (command == 0x94) or (command == 0x95):  # Jump or Call
-                                    sseqFile.write(f"\t{commandName} {trackLabelName[trackLabel.index(commandArg + sseqStart)]}\n")
-                                else:
-                                    sseqFile.write(f"\t{commandName} {commandArg}\n")
-                            else:
-                                sseqFile.write(f"\t{commandName}\n")
-                        else:
-                            velocity = SDAT[SDATPos]
-                            SDATPos += 1
-                            commandArg = (SDAT[SDATPos] & 0x7F)
                             commandArgLen = 1
+                            commandArg = (SDAT[SDATPos] & 0x7F)
                             for i in range(3):
                                 if SDAT[SDATPos] > 0x7F:
                                     commandArg <<= 7
@@ -819,146 +939,86 @@ if not mode:  # Unpack
                                     SDATPos += 1
                                     commandArgLen += 1
                             SDATPos += 1
-                            sseqFile.write(f"\t{sseqNote[command % 12]}{int(command / 12)},{velocity},{commandArg}\n")
-            with open(tempPath + tempExt, "wb") as outfile:
-                outfile.write(SDAT[SDATPos:(SDATPos + tempSize)])
-            tempFileString = SDAT[SDATPos:(SDATPos + tempSize)]
-            IDFile.write(tempName + tempExt)
-            if calcMD5:
-                thisMD5 = hashlib.md5(tempFileString)
-                IDFile.write(f";MD5 = {thisMD5.hexdigest()}")
-            IDFile.write("\n")
+                        else:
+                            commandArgMask = 0
+                            for i in range(commandArgLen):
+                                commandArgMask <<= 8
+                                commandArgMask += 0xFF
+                            commandArg = (read_long(SDATPos) & commandArgMask)
+                            SDATPos += commandArgLen
+                        if commandArgLen != 0:
+                            if (command == 0x94) or (command == 0x95):  # Jump or Call
+                                sseqFile.write(f"\t{commandName} {trackLabelName[trackLabel.index(commandArg + sseqStart)]}\n")
+                            else:
+                                sseqFile.write(f"\t{commandName} {commandArg}\n")
+                        else:
+                            sseqFile.write(f"\t{commandName}\n")
+                    else:
+                        velocity = SDAT[SDATPos]
+                        SDATPos += 1
+                        commandArg = (SDAT[SDATPos] & 0x7F)
+                        commandArgLen = 1
+                        for i in range(3):
+                            if SDAT[SDATPos] > 0x7F:
+                                commandArg <<= 7
+                                commandArg += (SDAT[SDATPos] & 0x7F)
+                                SDATPos += 1
+                                commandArgLen += 1
+                        SDATPos += 1
+                        sseqFile.write(f"\t{sseqNote[command % 12]}{int(command / 12)},{velocity},{commandArg}\n")
+            SDATPos = sseqStart - 0x1C
+        with open(tempPath + tempExt, "wb") as outfile:
+            outfile.write(SDAT[SDATPos:(SDATPos + tempSize)])
+        tempFileString = SDAT[SDATPos:(SDATPos + tempSize)]
+        thisMD5 = hashlib.md5(tempFileString)
+        fileBlock.file[-1].MD5 = f"{thisMD5.hexdigest()}"
+    with open(f"{outfileArg}/FileBlock.json", "w") as outfile:
+        outfile.write(json.dumps(fileBlock, cls=MyEncoder, indent=4))
 
 
 if mode:  # Build
+    if not os.path.exists(f"{outfileArg}/FileBlock.json"):
+        raise Exception("Missing FileBlock.json\n")
+    if not os.path.exists(f"{outfileArg}/InfoBlock.json"):
+        raise Exception("Missing InfoBlock.json\n")
     print("Building...")
     blocks = 4
     if skipSymbBlock:
         blocks = 3
-    if not os.path.exists(f"{outfileArg}/FileID.txt"):
-        print("\nMissing FileID.txt, files will be ordered as they are in the InfoBlock.\n")
-        skipFileOrder = True
-    if not os.path.exists(f"{outfileArg}/InfoBlock.txt"):
-        raise Exception("Missing InfoBlock.txt\n")
 
-    if not skipFileOrder:
-        with open(f"{outfileArg}/FileID.txt", "r") as IDFile:
-            done = False
-            while not done:
-                thisLine = IDFile.readline()
-                if not thisLine:
-                    done = True
-                thisLine = thisLine.split(";")  # ignore anything commented out
-                thisLine = thisLine[0]
-                thisLine = thisLine.split("\n")  # remove newline
-                thisLine = thisLine[0]
-                if thisLine != "":
-                    names[FILE].append(thisLine)
-                    itemCount[FILE] += 1
-    with open(f"{outfileArg}/InfoBlock.txt", "r") as infoFile:
-        seqarcSymbSubCount = []  # keep track of how many sub strings are in each seqarc
-        for i in range(8):
-            done = False
-            while not done:
-                thisLine = infoFile.readline()
-                if not thisLine:
-                    done = True
-                thisLine = thisLine.split(";")  # ignore anything commented out
-                thisLine = thisLine[0]
-                thisLine = thisLine.split("\n")  # remove newline
-                thisLine = thisLine[0]
-                if thisLine.find("{") == -1:  # ignore lines with {
-                    if thisLine.find("}") != -1:  # end of section
-                        done = True
-                    elif thisLine != "":
-                        thisLine = thisLine.split(", ")  # split parameters
-                        if check_unused(removeUnused, i, thisLine[0]):
-                            names[i].append(thisLine[0])
-                            if i == SEQARC:
-                                seqarcSymbSubCount.append(0)
-                            if thisLine[0] != "NULL":
-                                if skipFileOrder and itemParams[i][0] == FILE:
-                                    add_fileName(thisLine[1])
-                                for ii, param in enumerate(itemParams[i]):
-                                    if param >= 0:
-                                        namesUsed[param].append(thisLine[ii + 1])
-    if blocks == 4 and os.path.exists(f"{outfileArg}/SymbBlock.txt"):
-        with open(f"{outfileArg}/SymbBlock.txt", "r") as symbFile:
-            thisLine = ""
-            seqarcSymbSubNum = 0
-            done = False
-            seqarcSymbSubParent = []
-            seqarcSymbSubName = []
-            mainSEQARCID = -1
-            while not done:
-                thisLine = symbFile.readline()
-                if not thisLine:
-                    done = True
-                thisLine = thisLine.split(";")  # ignore anything commented out
-                thisLine = thisLine[0]
-                thisLine = thisLine.split("\n")  # remove newline
-                thisLine = thisLine[0]
-                if thisLine.find("{") == -1:  # ignore lines with {
-                    if thisLine.find("}") != -1:  # end of section
-                        done = True
-                    elif thisLine != "":
-                        if thisLine[:1] == "\t":  # is a sub string
-                            if mainSEQARCID != -1:
-                                seqarcSymbSubName.append(thisLine[1:])
-                                seqarcSymbSubParent.append(mainSEQARCID)
-                                seqarcSymbSubNum += 1
-                        else:  # not a sub string
-                            tempID = 0
-                            done2 = False
-                            while tempID < len(names[SEQARC]) and not done2:
-                                if names[SEQARC][tempID] == thisLine:
-                                    done2 = True
-                                else:
-                                    tempID += 1
-                            if done2:
-                                if mainSEQARCID != -1:
-                                    seqarcSymbSubCount[mainSEQARCID] = seqarcSymbSubNum
-                                mainSEQARCID = tempID
-                                seqarcSymbSubNum = 0
-                            else:
-                                mainSEQARCID = -1
-            if mainSEQARCID != -1:
-                seqarcSymbSubCount[mainSEQARCID] = seqarcSymbSubNum
-    with open(f"{outfileArg}/InfoBlock.txt", "r") as infoFile:
-        for i in range(8):
-            done = False
-            params = len(itemParams[i]) + 1
-            while not done:
-                thisLine = infoFile.readline()
-                if not thisLine:
-                    done = True
-                thisLine = thisLine.split(";")  # ignore anything commented out
-                thisLine = thisLine[0]
-                thisLine = thisLine.split("\n")  # remove newline
-                thisLine = thisLine[0]
-                if thisLine.find("{") == -1:  # ignore lines with {
-                    if thisLine.find("}") != -1:  # end of section
-                        done = True
-                    elif thisLine != "":
-                        thisLine = thisLine.split(", ")  # split parameters
-                        if check_unused(removeUnused, i, thisLine[0]):
-                            if thisLine[0] == "NULL":
-                                itemData[i].append("NULL")
-                                for ii in range(params - 1):
-                                    itemData[i].append(0)
-                                itemCount[i] += 1
-                            else:
-                                if i == GROUP:
-                                    params = (int(thisLine[1]) * 2) + 2
-                                    for ii, number in enumerate(thisLine[1:]):
-                                        thisLine[ii + 1] = int(number)  # convert ID to an integer
-                                if len(thisLine) != params:
-                                    raise Exception(f"{itemString[i]} wrong number of parameters.")
-                                if i != GROUP:
-                                    thisLine = convert_params(thisLine, itemParams[i])
-                                for ii in range(params):
-                                    itemData[i].append(thisLine[ii])
-                                itemCount[i] += 1
+    with open(f"{outfileArg}/FileBlock.json", "r") as infile:
+        fileBlock = FileBlock()
+        fileBlock.load(json.load(infile))
+    with open(f"{outfileArg}/InfoBlock.json", "r") as infile:
+        infoBlock = InfoBlock()
+        infoBlock.load(json.load(infile))
+    for i in infoBlock.seqInfo:
+        names[SEQ].append(i.name)
+    seqarcSymbSubParent = []
+    seqarcSymbSubName = []
+    seqarcSymbSubCount = []
+    for i in infoBlock.seqarcInfo:
+        names[SEQARC].append(i.name)
+        for ii in i.zippedName:
+            seqarcSymbSubParent.append(len(names[SEQARC]) - 1)
+            seqarcSymbSubName.append(ii)
+        seqarcSymbSubCount.append(len(i.zippedName))
+    for i in infoBlock.bankInfo:
+        names[BANK].append(i.name)
+    for i in infoBlock.wavarcInfo:
+        names[WAVARC].append(i.name)
+    for i in infoBlock.playerInfo:
+        names[PLAYER].append(i.name)
+    for i in infoBlock.groupInfo:
+        names[GROUP].append(i.name)
+    for i in infoBlock.player2Info:
+        names[PLAYER2].append(i.name)
+    for i in infoBlock.strmInfo:
+        names[STRM].append(i.name)
+    for i in fileBlock.file:
+        names[FILE].append(i.name)
+    itemCount = [len(names[SEQ]), len(names[SEQARC]), len(names[BANK]), len(names[WAVARC]), len(names[PLAYER]), len(names[GROUP]), len(names[PLAYER2]), len(names[STRM]), len(names[FILE])] 
+
     SDAT = bytearray(b'SDAT')  # Header
     SDAT += b'\xFF\xFE\x00\x01'  # Magic
     SDAT += bytearray(4)  # File size
@@ -975,16 +1035,13 @@ if mode:  # Build
         SDAT += bytearray(24)  # reserved bytes
 
         for i in range(8):
+            itemSymbOffset[i] = len(SDAT)
+            write_long(symbBlockOffset + (i * 4) + 8, itemSymbOffset[i] - symbBlockOffset)
+            append_long(itemCount[i])
             if i != SEQARC:
-                itemSymbOffset[i] = len(SDAT)
-                write_long(symbBlockOffset + (i * 4) + 8, itemSymbOffset[i] - symbBlockOffset)
-                append_long(itemCount[i])
                 SDAT += bytearray(itemCount[i] * 4)
             else:
-                itemSymbOffset[i] = len(SDAT)
                 seqarcSymbSubOffset = []
-                write_long(symbBlockOffset + (i * 4) + 8, itemSymbOffset[i] - symbBlockOffset)
-                append_long(itemCount[i])
                 SDAT += bytearray(itemCount[i] * 8)  # this has sub-groups
                 for ii in range(itemCount[i]):
                     write_long((itemSymbOffset[i] + 8) + (ii * 8), len(SDAT) - symbBlockOffset)
@@ -995,14 +1052,14 @@ if mode:  # Build
         for i in range(8):
             if i != SEQARC:
                 for ii in range(itemCount[i]):
-                    if names[i][ii] != "NULL":
+                    if names[i][ii] != "":
                         write_long((itemSymbOffset[i] + 4) + (ii * 4), len(SDAT) - symbBlockOffset)
                         for x, character in enumerate(names[i][ii]):
                             append_byte(ord(character))
                         append_byte(0)  # terminate string
             else:
                 for ii in range(itemCount[i]):
-                    if names[i][ii] != "NULL":
+                    if names[i][ii] != "":
                         write_long((itemSymbOffset[i] + 4) + (ii * 8), len(SDAT) - symbBlockOffset)
                         for x, character in enumerate(names[i][ii]):
                             append_byte(ord(character))
@@ -1010,7 +1067,7 @@ if mode:  # Build
                         curSeqarcSub = 0
                         for subi, name in enumerate(seqarcSymbSubName):
                             if seqarcSymbSubParent[subi] == ii:
-                                if name != "NULL":
+                                if name != "":
                                     write_long((seqarcSymbSubOffset[ii] + 4) + (curSeqarcSub * 4), len(SDAT) - symbBlockOffset)
                                     for x, character in enumerate(name):
                                         append_byte(ord(character))
@@ -1020,8 +1077,7 @@ if mode:  # Build
         write_long(16, symbBlockOffset)
         write_long(20, len(SDAT) - symbBlockOffset)
         headeri += 1
-        while (len(SDAT) & 0xFFFFFFFC) != len(SDAT):
-            SDAT += bytearray(1)  # pad to the nearest 0x04 byte alignment
+        SDAT += bytearray((4 - (len(SDAT) & 3)) & 3)  # pad to the nearest 0x04 byte alignment
         write_long(symbBlockOffset + 4, len(SDAT) - symbBlockOffset)
 
     infoBlockOffset = len(SDAT)  # infoBlock
@@ -1035,36 +1091,34 @@ if mode:  # Build
         write_long(infoBlockOffset + (i * 4) + 8, itemOffset[i] - infoBlockOffset)
         append_long(itemCount[i])
         SDAT += bytearray(itemCount[i] * 4)
-        if i != GROUP:
-            params = len(itemParams[i]) + 1
-            for ii in range(itemCount[i]):
-                if itemData[i][(ii * params)] != "NULL":
-                    write_long((itemOffset[i] + 4) + (ii * 4), len(SDAT) - infoBlockOffset)
-                    append_params(i, (ii * params), itemParams[i])
-        else:
-            ii = 0
-            entry = 0
-            while ii < len(itemData[i]):
-                if itemData[i][ii] != "NULL":
-                    write_long((itemOffset[i] + 4) + (entry * 4), len(SDAT) - infoBlockOffset)
-                    ii += 1  # skip the name
-                    append_long(itemData[i][ii])
-                    count = itemData[i][ii]
-                    ii += 1
-                    for x in range(count):
-                        append_long(itemData[i][ii])
-                        ii += 1
-                        append_long(itemData[i][ii])
-                        ii += 1
-                else:
-                    ii += 2  # skip name and 0 for number of entries
-                entry += 1
+        for ii in range(itemCount[i]):
+            write_long((itemOffset[i] + 4) + (ii * 4), len(SDAT) - infoBlockOffset)
+            tempSize = len(SDAT)
+            if i == SEQ:
+                infoBlock.write(infoBlock.seqInfo, ii)
+            elif i == SEQARC:
+                infoBlock.write(infoBlock.seqarcInfo, ii)
+            elif i == BANK:
+                infoBlock.write(infoBlock.bankInfo, ii)
+            elif i == WAVARC:
+                infoBlock.write(infoBlock.wavarcInfo, ii)
+            elif i == PLAYER:
+                infoBlock.write(infoBlock.playerInfo, ii)
+            elif i == GROUP:
+                infoBlock.write(infoBlock.groupInfo, ii)
+            elif i == PLAYER2:
+                infoBlock.write(infoBlock.player2Info, ii)
+            elif i == STRM:
+                infoBlock.write(infoBlock.strmInfo, ii)
+            if tempSize == len(SDAT):  # Null out the pointer for null items
+                write_long((itemOffset[i] + 4) + (ii * 4), 0)
+
     write_long(16 + (headeri * 8), infoBlockOffset)
     write_long(20 + (headeri * 8), len(SDAT) - infoBlockOffset)
     headeri += 1
-    while (len(SDAT) & 0xFFFFFFFC) != len(SDAT):
-        SDAT += bytearray(1)  # pad to the nearest 0x04 byte alignment
+    SDAT += bytearray((4 - (len(SDAT) & 3)) & 3)  # pad to the nearest 0x04 byte alignment
     write_long(infoBlockOffset + 4, len(SDAT) - infoBlockOffset)
+
 
     fatBlockOffset = len(SDAT)  # fatBlock
     SDAT += b'FAT\x20'  # Header
@@ -1075,8 +1129,7 @@ if mode:  # Build
     write_long(16 + (headeri * 8), fatBlockOffset)
     write_long(20 + (headeri * 8), len(SDAT) - fatBlockOffset)
     headeri += 1
-    while (len(SDAT) & 0xFFFFFFFC) != len(SDAT):
-        SDAT += bytearray(1)  # pad to the nearest 0x04 byte alignment
+    SDAT += bytearray((4 - (len(SDAT) & 3)) & 3)  # pad to the nearest 0x04 byte alignment
     write_long(fatBlockOffset + 4, len(SDAT) - fatBlockOffset)
 
     fileBlockOffset = len(SDAT)  # fileBlock
@@ -1084,8 +1137,7 @@ if mode:  # Build
     SDAT += bytearray(4)  # fileBlock size
     append_long(itemCount[FILE])  # number of files
     SDAT += bytearray(4)  # reserved
-    while (len(SDAT) & 0xFFFFFFE0) != len(SDAT):
-        SDAT += bytearray(1)  # pad to the nearest 0x20 byte alignment
+    SDAT += bytearray((0x20 - (len(SDAT) & 0x1F)) & 0x1F)  # pad to the nearest 0x20 byte alignment
 
     curFile = 0
     tFileBuffer = []
@@ -1095,22 +1147,7 @@ if mode:  # Build
             testPath = f"{outfileArg}/Files/{fName}"
             if not os.path.exists(testPath):
                 if fName[-5:] == ".swar":  # can the swar be built?
-                    testPath = f"{outfileArg}/Files/{itemString[3]}/{fName[:-5]}/FileID.txt"
-                    if not os.path.exists(testPath):
-                        raise Exception(f"Missing File:{testPath}")
-                    with open(testPath, "r") as swavIDFile:
-                        done = False
-                        swavName = []
-                        while not done:
-                            thisLine = swavIDFile.readline()
-                            if not thisLine:
-                                done = True
-                            thisLine = thisLine.split(";")  # ignore anything commented out
-                            thisLine = thisLine[0]
-                            thisLine = thisLine.split("\n")  # remove newline
-                            thisLine = thisLine[0]
-                            if thisLine != "":
-                                swavName.append(thisLine)
+                    swavName = fileBlock.file[i].subFile
                     swarTemp = []
                     for ii, sName in enumerate(swavName):
                         testPath = f"{outfileArg}/Files/{itemString[3]}/{fName[:-5]}/{sName}"
