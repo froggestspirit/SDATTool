@@ -975,14 +975,32 @@ if mode:  # Build
         infoBlock.load(json.load(infile))
 
     if optimize:
-        if optimizeSize:
-            for group in infoBlockGroup:  # Remove empty entries in infoBlock (may break in-game)
+        if optimizeSize:  #  These optimizations may break in-game, mainly used for generating a small SDAT for playback
+            for group in infoBlockGroup:  # Remove empty entries in infoBlock
                 i = 0
                 exec(f"""while i < len(infoBlock.{group}):
                     if infoBlock.{group}[i].name == '':
                         del infoBlock.{group}[i]
                     else:
                         i += 1""")
+            i = 0
+            while i < len(infoBlock.bankInfo):  # Remove banks not referenced in the infoBlock
+                name = infoBlock.bankInfo[i].name
+                if name in list(item.bnk for item in infoBlock.seqInfo):
+                    i += 1
+                else:
+                    del infoBlock.bankInfo[i]
+            i = 0
+            while i < len(infoBlock.wavarcInfo):  # Remove wavarc not referenced in the infoBlock
+                name = infoBlock.wavarcInfo[i].name
+                delete = True
+                for wa in range(4):
+                    if name in list(item.wa[wa] for item in infoBlock.bankInfo):
+                        delete = False
+                if delete:
+                    del infoBlock.wavarcInfo[i]
+                else:
+                    i += 1
         i = 0
         while i < len(fileBlock.file):  # Remove files not referenced in the infoBlock
             name = fileBlock.file[i].name
