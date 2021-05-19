@@ -36,6 +36,10 @@ itemString = (
     "FILE"
 )
 
+infoBlockGroup = ["seqInfo", "seqarcInfo", "bankInfo", "wavarcInfo", "playerInfo", "groupInfo", "player2Info", "strmInfo"]
+infoBlockGroupType = ["SEQInfo", "SEQARCInfo", "BANKInfo", "WAVARCInfo", "PLAYERInfo", "GROUPInfo", "PLAYER2Info", "STRMInfo"]
+infoBlockGroupFile = ["seqInfo", "seqarcInfo", "bankInfo", "wavarcInfo", "strmInfo"]
+
 class MyEncoder(json.JSONEncoder):
     def default(self, o):
         return o.__dict__
@@ -246,15 +250,12 @@ class InfoBlock:
                 for i in range(5):
                     append_byte(self.reserved[i])
     def __init__(self):
-        self.group = ["seqInfo", "seqarcInfo", "bankInfo", "wavarcInfo", "playerInfo", "groupInfo", "player2Info", "strmInfo"]
-        self.groupType = ["SEQInfo", "SEQARCInfo", "BANKInfo", "WAVARCInfo", "PLAYERInfo", "GROUPInfo", "PLAYER2Info", "STRMInfo"]
-        self.groupFile = ["seqInfo", "seqarcInfo", "bankInfo", "wavarcInfo", "strmInfo"]
-        for group in self.group:
+        for group in infoBlockGroup:
             exec(f"self.{group} = []")
     def load(self, infile):
-        for index, group in enumerate(self.group):
+        for index, group in enumerate(infoBlockGroup):
             exec(f"""for i in range(len(infile['{group}'])):
-                self.{group}.append(self.{self.groupType[index]}(None, dict=infile['{group}'][i]))""")
+                self.{group}.append(self.{infoBlockGroupType[index]}(None, dict=infile['{group}'][i]))""")
 
     def write(self, type, index=-1):
         if index == -1:
@@ -263,7 +264,7 @@ class InfoBlock:
         else:
             type[index].write()
     def replace_file(self, type, oldFile, newFile):
-        exec(f"""for item in self.{self.group[eval(type)]}:
+        exec(f"""for item in self.{infoBlockGroup[eval(type)]}:
             if item.name != "":
                 if item.fileName == oldFile:
                     item.fileName = newFile""")
@@ -622,7 +623,7 @@ if not mode:  # Unpack
                     names[FILE].append(iName)
             else:
                 iName = ""
-            exec(f"infoBlock.{infoBlock.group[i]}.append(infoBlock.{infoBlock.groupType[i]}(iName))")
+            exec(f"infoBlock.{infoBlockGroup[i]}.append(infoBlock.{infoBlockGroupType[i]}(iName))")
             if i == SEQARC:
                 infoBlock.seqarcInfo[-1].zippedName = [seqarcName[id] for id, num in enumerate(seqarcNameID) if num == ii]
     with open(f"{outfileArg}/InfoBlock.json", "w") as outfile:
@@ -975,7 +976,7 @@ if mode:  # Build
 
     if optimize:
         if optimizeSize:
-            for group in infoBlock.group:  # Remove empty entries in infoBlock (may break in-game)
+            for group in infoBlockGroup:  # Remove empty entries in infoBlock (may break in-game)
                 i = 0
                 exec(f"""while i < len(infoBlock.{group}):
                     if infoBlock.{group}[i].name == '':
@@ -986,7 +987,7 @@ if mode:  # Build
         while i < len(fileBlock.file):  # Remove files not referenced in the infoBlock
             name = fileBlock.file[i].name
             delete = True
-            for group in infoBlock.groupFile:
+            for group in infoBlockGroupFile:
                 exec(f"""if name in list(item.fileName for item in list(item for item in infoBlock.{group} if item.name != '')):
                     delete = False""")
             if delete:
@@ -1106,7 +1107,7 @@ if mode:  # Build
         for ii in range(itemCount[i]):
             write_long((itemOffset[i] + 4) + (ii * 4), len(SDAT) - infoBlockOffset)
             tempSize = len(SDAT)
-            exec(f"infoBlock.write(infoBlock.{infoBlock.group[i]}, ii)")
+            exec(f"infoBlock.write(infoBlock.{infoBlockGroup[i]}, ii)")
             if tempSize == len(SDAT):  # Null out the pointer for null items
                 write_long((itemOffset[i] + 4) + (ii * 4), 0)
 
