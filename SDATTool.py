@@ -975,7 +975,7 @@ if mode:  # Build
 
     if optimize:
         if optimizeSize:
-            for group in groupList:  # Remove empty entries in infoBlock (may break in-game)
+            for group in infoBlock.group:  # Remove empty entries in infoBlock (may break in-game)
                 i = 0
                 exec(f"""while i < len(infoBlock.{group}):
                     if infoBlock.{group}[i].name == '':
