@@ -7,7 +7,7 @@ import argparse
 import json
 
 # SDAT-Tool by FroggestSpirit
-version = "1.0.0"
+version = "1.1.0"
 # Unpacks and builds SDAT files
 # Make backups, this can overwrite files without confirmation
 
@@ -246,37 +246,27 @@ class InfoBlock:
                 for i in range(5):
                     append_byte(self.reserved[i])
     def __init__(self):
-        self.seqInfo = []
-        self.seqarcInfo = []
-        self.bankInfo = []
-        self.wavarcInfo = []
-        self.playerInfo = []
-        self.groupInfo = []
-        self.player2Info = []
-        self.strmInfo = []
+        self.group = ["seqInfo", "seqarcInfo", "bankInfo", "wavarcInfo", "playerInfo", "groupInfo", "player2Info", "strmInfo"]
+        self.groupType = ["SEQInfo", "SEQARCInfo", "BANKInfo", "WAVARCInfo", "PLAYERInfo", "GROUPInfo", "PLAYER2Info", "STRMInfo"]
+        self.groupFile = ["seqInfo", "seqarcInfo", "bankInfo", "wavarcInfo", "strmInfo"]
+        for group in self.group:
+            exec(f"self.{group} = []")
     def load(self, infile):
-        for i in range(len(infile["seqInfo"])):
-            self.seqInfo.append(self.SEQInfo(None, dict=infile["seqInfo"][i]))
-        for i in range(len(infile["seqarcInfo"])):
-            self.seqarcInfo.append(self.SEQARCInfo(None, dict=infile["seqarcInfo"][i]))
-        for i in range(len(infile["bankInfo"])):
-            self.bankInfo.append(self.BANKInfo(None, dict=infile["bankInfo"][i]))
-        for i in range(len(infile["wavarcInfo"])):
-            self.wavarcInfo.append(self.WAVARCInfo(None, dict=infile["wavarcInfo"][i]))
-        for i in range(len(infile["playerInfo"])):
-            self.playerInfo.append(self.PLAYERInfo(None, dict=infile["playerInfo"][i]))
-        for i in range(len(infile["groupInfo"])):
-            self.groupInfo.append(self.GROUPInfo(None, dict=infile["groupInfo"][i]))
-        for i in range(len(infile["player2Info"])):
-            self.player2Info.append(self.PLAYER2Info(None, dict=infile["player2Info"][i]))
-        for i in range(len(infile["strmInfo"])):
-            self.strmInfo.append(self.STRMInfo(None, dict=infile["strmInfo"][i]))
+        for index, group in enumerate(self.group):
+            exec(f"""for i in range(len(infile['{group}'])):
+                self.{group}.append(self.{self.groupType[index]}(None, dict=infile['{group}'][i]))""")
+
     def write(self, type, index=-1):
         if index == -1:
             for i in range(len(type)):
                 type[i].write()
         else:
             type[index].write()
+    def replace_file(self, type, oldFile, newFile):
+        exec(f"""for item in self.{self.group[eval(type)]}:
+            if item.name != "":
+                if item.fileName == oldFile:
+                    item.fileName = newFile""")
 
 class FileBlock:
     class File:
@@ -529,7 +519,8 @@ parser.add_argument("folder", nargs="?")
 mode_grp = parser.add_mutually_exclusive_group(required=True)
 mode_grp.add_argument("-u", "--unpack", dest="mode", action="store_false")
 mode_grp.add_argument("-b", "--build", dest="mode", action="store_true")
-#parser.add_argument("-os", "--optimize_size", dest="optimizeSize", action="store_true", help="Build Optimized for filesize")
+parser.add_argument("-o", "--optimize", dest="optimize", action="store_true", help="Remove unused and duplicate files")
+parser.add_argument("-os", "--optimize_size", dest="optimizeSize", action="store_true", help="Build Optimized for filesize")
 #parser.add_argument("-or", "--optimize_ram", dest="optimizeRAM", action="store_true", help="Build Optimized for RAM")
 parser.add_argument("-ns", "--noSymbBlock", dest="noSymbBlock", action="store_true", help="Build without a SymbBlock")
 args = parser.parse_args()
@@ -537,7 +528,10 @@ args = parser.parse_args()
 mode = args.mode
 infileArg = args.SDATfile
 outfileArg = args.folder
-#optimizeSize = args.optimizeSize
+optimize = args.optimize
+optimizeSize = args.optimizeSize
+if optimizeSize:
+    optimize = True
 #optimizeRAM = args.optimizeRAM
 skipSymbBlock = args.noSymbBlock
 
@@ -628,23 +622,9 @@ if not mode:  # Unpack
                     names[FILE].append(iName)
             else:
                 iName = ""
-            if i == SEQ:
-                infoBlock.seqInfo.append(infoBlock.SEQInfo(iName))
-            elif i == SEQARC:
-                infoBlock.seqarcInfo.append(infoBlock.SEQARCInfo(iName))
+            exec(f"infoBlock.{infoBlock.group[i]}.append(infoBlock.{infoBlock.groupType[i]}(iName))")
+            if i == SEQARC:
                 infoBlock.seqarcInfo[-1].zippedName = [seqarcName[id] for id, num in enumerate(seqarcNameID) if num == ii]
-            elif i == BANK:
-                infoBlock.bankInfo.append(infoBlock.BANKInfo(iName))
-            elif i == WAVARC:
-                infoBlock.wavarcInfo.append(infoBlock.WAVARCInfo(iName))
-            elif i == PLAYER:
-                infoBlock.playerInfo.append(infoBlock.PLAYERInfo(iName))
-            elif i == GROUP:
-                infoBlock.groupInfo.append(infoBlock.GROUPInfo(iName))
-            elif i == PLAYER2:
-                infoBlock.player2Info.append(infoBlock.PLAYER2Info(iName))
-            elif i == STRM:
-                infoBlock.strmInfo.append(infoBlock.STRMInfo(iName))
     with open(f"{outfileArg}/InfoBlock.json", "w") as outfile:
         outfile.write(json.dumps(infoBlock, cls=MyEncoder, indent=4)  # make the JSON file pretty at the expense of ugly code
             .replace(f"\n{' '*16}","")
@@ -992,6 +972,38 @@ if mode:  # Build
     with open(f"{outfileArg}/InfoBlock.json", "r") as infile:
         infoBlock = InfoBlock()
         infoBlock.load(json.load(infile))
+
+    if optimize:
+        if optimizeSize:
+            for group in groupList:  # Remove empty entries in infoBlock (may break in-game)
+                i = 0
+                exec(f"""while i < len(infoBlock.{group}):
+                    if infoBlock.{group}[i].name == '':
+                        del infoBlock.{group}[i]
+                    else:
+                        i += 1""")
+        i = 0
+        while i < len(fileBlock.file):  # Remove files not referenced in the infoBlock
+            name = fileBlock.file[i].name
+            delete = True
+            for group in infoBlock.groupFile:
+                exec(f"""if name in list(item.fileName for item in list(item for item in infoBlock.{group} if item.name != '')):
+                    delete = False""")
+            if delete:
+                del fileBlock.file[i]
+            else:
+                i += 1
+        i = 0
+        while i < len(fileBlock.file):  # Remove files with duplicate MD5
+            item = fileBlock.file[i]
+            firstID = list(md5.MD5 for md5 in fileBlock.file[:i + 1]).index(item.MD5)
+            if i != firstID:
+                infoBlock.replace_file(item.type, item.name, fileBlock.file[firstID].name)
+                del fileBlock.file[i]
+            else:
+                i += 1
+
+
     for i in infoBlock.seqInfo:
         names[SEQ].append(i.name)
     seqarcSymbSubParent = []
@@ -1094,22 +1106,7 @@ if mode:  # Build
         for ii in range(itemCount[i]):
             write_long((itemOffset[i] + 4) + (ii * 4), len(SDAT) - infoBlockOffset)
             tempSize = len(SDAT)
-            if i == SEQ:
-                infoBlock.write(infoBlock.seqInfo, ii)
-            elif i == SEQARC:
-                infoBlock.write(infoBlock.seqarcInfo, ii)
-            elif i == BANK:
-                infoBlock.write(infoBlock.bankInfo, ii)
-            elif i == WAVARC:
-                infoBlock.write(infoBlock.wavarcInfo, ii)
-            elif i == PLAYER:
-                infoBlock.write(infoBlock.playerInfo, ii)
-            elif i == GROUP:
-                infoBlock.write(infoBlock.groupInfo, ii)
-            elif i == PLAYER2:
-                infoBlock.write(infoBlock.player2Info, ii)
-            elif i == STRM:
-                infoBlock.write(infoBlock.strmInfo, ii)
+            exec(f"infoBlock.write(infoBlock.{infoBlock.group[i]}, ii)")
             if tempSize == len(SDAT):  # Null out the pointer for null items
                 write_long((itemOffset[i] + 4) + (ii * 4), 0)
 
