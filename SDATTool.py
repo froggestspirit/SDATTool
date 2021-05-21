@@ -5,9 +5,10 @@ import hashlib
 import time
 import argparse
 import json
+from shutil import copyfile
 
 # SDAT-Tool by FroggestSpirit
-version = "1.1.0"
+version = "1.2.0"
 # Unpacks and builds SDAT files
 # Make backups, this can overwrite files without confirmation
 
@@ -101,7 +102,7 @@ class InfoBlock:
                 append_short(names[FILE].index(self.fileName))
                 append_short(self.unkA)
     class BANKInfo:
-        def __init__(self, name, dict=None):
+        def __init__(self, name, dict=None, blank=False):
             if dict:
                 self.name = dict["name"]
                 if self.name != "":
@@ -113,9 +114,14 @@ class InfoBlock:
                 if self.name != "":
                     self.fileName = read_filename()
                     self.unkA = read_short(None)
-                    self.wa = [None] * 4
+                    self.wa = [""] * 4
                     for i in range(4):
                         self.wa[i] = read_item_name(WAVARC)
+            if blank:
+                self.name = None
+                self.fileName = None
+                self.unkA = None
+                self.wa = [""] * 4
         def write(self):
             if self.name != "":
                 append_short(names[FILE].index(self.fileName))
@@ -126,7 +132,7 @@ class InfoBlock:
                     else:
                         append_short([i.name for i in infoBlock.wavarcInfo].index(self.wa[i]))
     class WAVARCInfo:
-        def __init__(self, name, dict=None):
+        def __init__(self, name, dict=None, blank=False):
             if dict:
                 self.name = dict["name"]
                 if self.name != "":
@@ -137,6 +143,10 @@ class InfoBlock:
                 if self.name != "":
                     self.fileName = read_filename()
                     self.unkA = read_short(None)
+            if blank:
+                self.name = None
+                self.fileName = None
+                self.unkA = None
         def write(self):
             if self.name != "":
                 append_short(names[FILE].index(self.fileName))
@@ -426,6 +436,8 @@ itemCount = [0, 0, 0, 0, 0, 0, 0, 0, 0]
 names = [[], [], [], [], [], [], [], [], []]
 fileType = []
 fileNameID = []
+progUsed = []
+progUsedName = []
 
 SDAT = bytearray()
 SDATPos = 0
@@ -522,7 +534,7 @@ mode_grp.add_argument("-u", "--unpack", dest="mode", action="store_false")
 mode_grp.add_argument("-b", "--build", dest="mode", action="store_true")
 parser.add_argument("-o", "--optimize", dest="optimize", action="store_true", help="Remove unused and duplicate files")
 parser.add_argument("-os", "--optimize_size", dest="optimizeSize", action="store_true", help="Build Optimized for filesize")
-#parser.add_argument("-or", "--optimize_ram", dest="optimizeRAM", action="store_true", help="Build Optimized for RAM")
+parser.add_argument("-or", "--optimize_ram", dest="optimizeRAM", action="store_true", help="Build Optimized for RAM")
 parser.add_argument("-ns", "--noSymbBlock", dest="noSymbBlock", action="store_true", help="Build without a SymbBlock")
 args = parser.parse_args()
 
@@ -531,13 +543,13 @@ infileArg = args.SDATfile
 outfileArg = args.folder
 optimize = args.optimize
 optimizeSize = args.optimizeSize
-if optimizeSize:
+optimizeRAM = args.optimizeRAM
+if optimizeSize or optimizeRAM:
     optimize = True
-#optimizeRAM = args.optimizeRAM
 skipSymbBlock = args.noSymbBlock
 
-#if optimizeRAM & optimizeSize:
-#    raise Exception("Cannot optimize for size and RAM")
+if optimizeRAM & optimizeSize:
+    raise Exception("Cannot optimize for size and RAM")
 if infileArg.lower().find(".sdat") == -1:
     raise Exception("File is not a SDAT file")
 if not outfileArg:
@@ -642,16 +654,16 @@ if not mode:  # Unpack
     entries = read_long(SDATPos)
     if not os.path.exists(f"{outfileArg}/Files"):
         os.makedirs(f"{outfileArg}/Files")
-    if not os.path.exists(f"{outfileArg}/Files/{itemString[0]}"):
-        os.makedirs(f"{outfileArg}/Files/{itemString[0]}")
-    if not os.path.exists(f"{outfileArg}/Files/{itemString[1]}"):
-        os.makedirs(f"{outfileArg}/Files/{itemString[1]}")
-    if not os.path.exists(f"{outfileArg}/Files/{itemString[2]}"):
-        os.makedirs(f"{outfileArg}/Files/{itemString[2]}")
-    if not os.path.exists(f"{outfileArg}/Files/{itemString[3]}"):
-        os.makedirs(f"{outfileArg}/Files/{itemString[3]}")
-    if not os.path.exists(f"{outfileArg}/Files/{itemString[7]}"):
-        os.makedirs(f"{outfileArg}/Files/{itemString[7]}")
+    if not os.path.exists(f"{outfileArg}/Files/{itemString[SEQ]}"):
+        os.makedirs(f"{outfileArg}/Files/{itemString[SEQ]}")
+    if not os.path.exists(f"{outfileArg}/Files/{itemString[SEQARC]}"):
+        os.makedirs(f"{outfileArg}/Files/{itemString[SEQARC]}")
+    if not os.path.exists(f"{outfileArg}/Files/{itemString[BANK]}"):
+        os.makedirs(f"{outfileArg}/Files/{itemString[BANK]}")
+    if not os.path.exists(f"{outfileArg}/Files/{itemString[WAVARC]}"):
+        os.makedirs(f"{outfileArg}/Files/{itemString[WAVARC]}")
+    if not os.path.exists(f"{outfileArg}/Files/{itemString[STRM]}"):
+        os.makedirs(f"{outfileArg}/Files/{itemString[STRM]}")
     for i in range(entries):
         SDATPos = read_long(fatOffset + 12 + (i * 16))
         tempSize = read_long(fatOffset + 16 + (i * 16))
@@ -974,6 +986,103 @@ if mode:  # Build
         infoBlock = InfoBlock()
         infoBlock.load(json.load(infile))
 
+    if optimizeRAM:
+        for i, item in enumerate(infoBlock.seqInfo):  # Check for SSEQ source files
+            if item.name != "":
+                fName = item.fileName
+                if fName[-5:] == ".sseq":  # check for used instruments
+                    if not fName in progUsedName:
+                        tempInstUsed = []
+                        testPath = f"{outfileArg}/Files/{itemString[SEQ]}/{fName[:-5]}.txt"
+                        if not os.path.exists(testPath):
+                            raise Exception(f"Missing File:{testPath}")
+                        with open(testPath, "r") as sseqFile:
+                            done = False
+                            sseqLines = []
+                            numInst = 0
+                            while not done:
+                                thisLine = sseqFile.readline()
+                                if not thisLine:
+                                    done = True
+                                thisLine = thisLine.split(";")[0]  # ignore anything commented out
+                                thisLine = thisLine.split("\n")[0]  # remove newline
+                                if thisLine != "":
+                                    if "Instrument" in thisLine:
+                                        thisLine = int(thisLine.split(" ")[1])
+                                        if not thisLine in tempInstUsed:
+                                            tempInstUsed.append(thisLine)
+                        progUsedName.append(fName)
+                        progUsed.append(tempInstUsed)
+                    tempInstUsed = progUsed[progUsedName.index(fName)]
+                    bnkID = list(bnk.name for bnk in infoBlock.bankInfo).index(infoBlock.seqInfo[i].bnk)
+                    bnkFile = infoBlock.bankInfo[bnkID].fileName
+                    fileBlock.file.append(fileBlock.File(f"{item.name}.sbnk", "BANK"))
+                    fileBlock.file[-1].MD5 = fileBlock.file[list(file.name for file in fileBlock.file).index(bnkFile)].MD5
+                    bnkFile = bnkFile.replace(".sbnk", ".txt")
+                    usedSwav = [[], [], [], []]
+                    with open(f"{outfileArg}/Files/{itemString[BANK]}/{bnkFile}", "r") as sbnkIDFile:
+                        done = False
+                        sbnkLines = []
+                        numInst = 0
+                        curInst = -1
+                        while not done:
+                            thisLine = sbnkIDFile.readline()
+                            if not thisLine:
+                                done = True
+                            thisLine = thisLine.split(";")[0]  # ignore anything commented out
+                            thisLine = thisLine.split("\n")[0]  # remove newline
+                            if thisLine != "" and thisLine.find("Unused") == -1:
+                                if thisLine.find("\t") == -1:  # Don't count unused or sub definitions
+                                    thisLine = thisLine.replace(" ","").split(",")
+                                    curInst = int(thisLine[0])
+                                    if curInst in tempInstUsed:
+                                        if thisLine[1] == "Single":
+                                            if not int(thisLine[2]) in usedSwav[int(thisLine[3])]:
+                                                usedSwav[int(thisLine[3])].append(int(thisLine[2]))
+                                            thisLine[2] = str(usedSwav[int(thisLine[3])].index(int(thisLine[2])))
+                                            sbnkLines.append(", ".join(thisLine))
+                                        else:
+                                            sbnkLines.append(", ".join(thisLine))
+                                    else:
+                                        sbnkLines.append(f"{thisLine[0]}, NULL")
+                                elif thisLine.find("\t") != -1:
+                                    thisLine = thisLine.replace(" ","").split(",")
+                                    if curInst in tempInstUsed:
+                                        if not int(thisLine[1]) in usedSwav[int(thisLine[2])]:
+                                            usedSwav[int(thisLine[2])].append(int(thisLine[1]))
+                                        thisLine[1] = str(usedSwav[int(thisLine[2])].index(int(thisLine[1])))
+                                        sbnkLines.append(", ".join(thisLine))
+                                else:
+                                    sbnkLines.append(thisLine)
+                    with open(f"{outfileArg}/Files/{itemString[BANK]}/{item.name}.txt", "w") as sbnkIDFile:
+                        for line in sbnkLines:
+                            sbnkIDFile.write(f"{line}\n")
+
+                    infoBlock.seqInfo[i].bnk = f"BANK_{item.name}"
+                    infoBlock.bankInfo.append(infoBlock.BANKInfo("", blank=True))
+                    infoBlock.bankInfo[-1].name = f"BANK_{item.name}"
+                    infoBlock.bankInfo[-1].fileName = f"{item.name}.sbnk"
+                    infoBlock.bankInfo[-1].unkA = infoBlock.bankInfo[bnkID].unkA
+                    for j in range(4):
+                        if len(usedSwav[j]) > 0:
+                            if infoBlock.bankInfo[bnkID].wa[j] != "":
+                                swarID = list(swar.name for swar in infoBlock.wavarcInfo).index(infoBlock.bankInfo[bnkID].wa[j])
+                                swarFileID = list(swar.name for swar in fileBlock.file).index(infoBlock.wavarcInfo[swarID].fileName)
+                                infoBlock.bankInfo[-1].wa[j] = f"WA{j}_{item.name}"
+                                infoBlock.wavarcInfo.append(infoBlock.BANKInfo("", blank=True))
+                                infoBlock.wavarcInfo[-1].name = f"WA{j}_{item.name}"
+                                infoBlock.wavarcInfo[-1].fileName = f"{item.name}_WA{j}.swar"
+                                infoBlock.wavarcInfo[-1].unkA = infoBlock.wavarcInfo[swarID].unkA
+                                fileBlock.file.append(fileBlock.File(f"{item.name}_WA{j}.swar", "WAVARC"))
+
+                                if not os.path.exists(f"{outfileArg}/Files/{itemString[WAVARC]}/{item.name}_WA{j}"):
+                                    os.makedirs(f"{outfileArg}/Files/{itemString[WAVARC]}/{item.name}_WA{j}")
+                                fileBlock.file[-1].subFile = []
+                                for sf in usedSwav[j]:
+                                    fileBlock.file[-1].subFile.append(fileBlock.file[swarFileID].subFile[sf])
+                                    copyfile(f"{outfileArg}/Files/{itemString[WAVARC]}/{fileBlock.file[swarFileID].name.split('.')[0]}/{fileBlock.file[swarFileID].subFile[sf]}", f"{outfileArg}/Files/{itemString[WAVARC]}/{item.name}_WA{j}/{fileBlock.file[swarFileID].subFile[sf]}")
+
+
     if optimize:
         if optimizeSize:  #  These optimizations may break in-game, mainly used for generating a small SDAT for playback
             for group in infoBlockGroup:  # Remove empty entries in infoBlock
@@ -1006,21 +1115,22 @@ if mode:  # Build
             name = fileBlock.file[i].name
             delete = True
             for group in infoBlockGroupFile:
-                exec(f"""if name in list(item.fileName for item in list(item for item in infoBlock.{group} if item.name != '')):
+                exec(f"""if name in list(item.fileName for item in (item for item in infoBlock.{group} if item.name != '')):
                     delete = False""")
             if delete:
                 del fileBlock.file[i]
             else:
                 i += 1
-        i = 0
-        while i < len(fileBlock.file):  # Remove files with duplicate MD5
-            item = fileBlock.file[i]
-            firstID = list(md5.MD5 for md5 in fileBlock.file[:i + 1]).index(item.MD5)
-            if i != firstID:
-                infoBlock.replace_file(item.type, item.name, fileBlock.file[firstID].name)
-                del fileBlock.file[i]
-            else:
-                i += 1
+        if not optimizeRAM:
+            i = 0
+            while i < len(fileBlock.file):  # Remove files with duplicate MD5
+                item = fileBlock.file[i]
+                firstID = list(md5.MD5 for md5 in fileBlock.file[:i + 1]).index(item.MD5)
+                if i != firstID:
+                    infoBlock.replace_file(item.type, item.name, fileBlock.file[firstID].name)
+                    del fileBlock.file[i]
+                else:
+                    i += 1
 
 
     for i in infoBlock.seqInfo:
@@ -1155,146 +1265,155 @@ if mode:  # Build
     SDAT += bytearray(4)  # reserved
     SDAT += bytearray((0x20 - (len(SDAT) & 0x1F)) & 0x1F)  # pad to the nearest 0x20 byte alignment
 
+
+    for i, fName in enumerate(names[FILE]):  # Check for BANK source files
+        testPath = f"{outfileArg}/Files/{itemString[itemExt.index(fName[-5:])]}/{fName}"
+        if not os.path.exists(testPath):
+            if fName[-5:] == ".sbnk":  # can the sbnk be built?
+                testPath = f"{outfileArg}/Files/{itemString[BANK]}/{fName[:-5]}.txt"
+                if not os.path.exists(testPath):
+                    raise Exception(f"Missing File:{testPath}")
+                with open(testPath, "r") as sbnkIDFile:
+                    done = False
+                    sbnkLines = []
+                    numInst = 0
+                    while not done:
+                        thisLine = sbnkIDFile.readline()
+                        if not thisLine:
+                            done = True
+                        thisLine = thisLine.split(";")[0]  # ignore anything commented out
+                        thisLine = thisLine.split("\n")[0]  # remove newline
+                        if thisLine != "":
+                            sbnkLines.append(thisLine)
+                            if thisLine.find("\t") == -1 and thisLine.find("Unused") == -1:  # Don't count unused or sub definitions
+                                numInst += 1
+                sbnkHeader = []
+                sbnkHeaderSize = 0x3C
+                sbnkData = []
+                prevPointer = b'\x00\x00\x00\x00'
+                sbnkHeader.append(b'SBNK')  # Header
+                sbnkHeader.append(b'\xFF\xFE\x00\x01')  # magic
+                sbnkHeader.append(b'\x00\x00\x00\x00')  # Reserve for sbnk size
+                sbnkHeader.append(b'\x10\x00\x01\x00')  # structure size and blocks
+                sbnkHeader.append(b'DATA')
+                sbnkHeader.append(b'\x00\x00\x00\x00')  # Reserve for struct size
+                sbnkHeader.append(b'\x00' * 32)  # reserved
+                sbnkHeader.append((numInst).to_bytes(4, byteorder='little'))  # Number of instruments
+                for ii in range(numInst):
+                    sbnkHeader.append(b'\x00\x00\x00\x00')  # Reserve for pointers
+                for ii, inst in enumerate(sbnkLines):
+                    thisLine = inst
+                    if thisLine.find("\t") == -1:
+                        thisLine = thisLine.split(", ")
+                        if thisLine[1] == "SameAsAbove":
+                            sbnkHeader[8 + int(thisLine[0])] = prevPointer
+                        elif thisLine[1] != "0" and thisLine[1] != "NULL":
+                            if thisLine[1] == "Single":
+                                thisLine[1] = "1"
+                            elif thisLine[1] == "PSG1":
+                                thisLine[1] = "2"
+                            elif thisLine[1] == "PSG2":
+                                thisLine[1] = "3"
+                            elif thisLine[1] == "PSG3":
+                                thisLine[1] = "4"
+                            elif thisLine[1] == "Drums":
+                                thisLine[1] = "16"
+                            elif thisLine[1] == "Keysplit":
+                                thisLine[1] = "17"
+                            sbnkHeaderSize = (numInst * 4) + 0x3C
+                            if thisLine[0] == "Unused":
+                                for x, unusedData in enumerate(thisLine[1:]):
+                                    sbnkData.append((int(unusedData)).to_bytes(1, byteorder='little'))
+                            else:
+                                prevPointer = (int(thisLine[1]) + ((sbnkHeaderSize + sum(len(tf) for tf in sbnkData)) << 8)).to_bytes(4, byteorder='little')
+                                sbnkHeader[8 + int(thisLine[0])] = prevPointer
+                            if int(thisLine[1]) < 16:
+                                sbnkData.append((int(thisLine[2])).to_bytes(2, byteorder='little'))
+                                sbnkData.append((int(thisLine[3])).to_bytes(2, byteorder='little'))
+                                sbnkData.append((int(thisLine[4])).to_bytes(1, byteorder='little'))
+                                sbnkData.append((int(thisLine[5])).to_bytes(1, byteorder='little'))
+                                sbnkData.append((int(thisLine[6])).to_bytes(1, byteorder='little'))
+                                sbnkData.append((int(thisLine[7])).to_bytes(1, byteorder='little'))
+                                sbnkData.append((int(thisLine[8])).to_bytes(1, byteorder='little'))
+                                sbnkData.append((int(thisLine[9])).to_bytes(1, byteorder='little'))
+                            elif int(thisLine[1]) == 16:
+                                sbnkData.append((int(thisLine[2])).to_bytes(1, byteorder='little'))
+                                sbnkData.append((int(thisLine[3])).to_bytes(1, byteorder='little'))
+                            elif int(thisLine[1]) == 17:
+                                sbnkData.append((int(thisLine[2])).to_bytes(1, byteorder='little'))
+                                sbnkData.append((int(thisLine[3])).to_bytes(1, byteorder='little'))
+                                sbnkData.append((int(thisLine[4])).to_bytes(1, byteorder='little'))
+                                sbnkData.append((int(thisLine[5])).to_bytes(1, byteorder='little'))
+                                sbnkData.append((int(thisLine[6])).to_bytes(1, byteorder='little'))
+                                sbnkData.append((int(thisLine[7])).to_bytes(1, byteorder='little'))
+                                sbnkData.append((int(thisLine[8])).to_bytes(1, byteorder='little'))
+                                sbnkData.append((int(thisLine[9])).to_bytes(1, byteorder='little'))
+                    else:
+                        thisLine = thisLine.split("\t")
+                        thisLine = thisLine[1]
+                        thisLine = thisLine.split(", ")
+                        sbnkData.append((int(thisLine[0])).to_bytes(2, byteorder='little'))
+                        sbnkData.append((int(thisLine[1])).to_bytes(2, byteorder='little'))
+                        sbnkData.append((int(thisLine[2])).to_bytes(2, byteorder='little'))
+                        sbnkData.append((int(thisLine[3])).to_bytes(1, byteorder='little'))
+                        sbnkData.append((int(thisLine[4])).to_bytes(1, byteorder='little'))
+                        sbnkData.append((int(thisLine[5])).to_bytes(1, byteorder='little'))
+                        sbnkData.append((int(thisLine[6])).to_bytes(1, byteorder='little'))
+                        sbnkData.append((int(thisLine[7])).to_bytes(1, byteorder='little'))
+                        sbnkData.append((int(thisLine[8])).to_bytes(1, byteorder='little'))
+                sbnkSize = sum(len(tf) for tf in sbnkData) + sbnkHeaderSize
+                while (sbnkSize & 0xFFFFFFFC) != sbnkSize:
+                    sbnkData.append(b'\x00')  # pad to the nearest 0x4 byte alignment
+                    sbnkSize += 1
+                sbnkHeader[2] = (sbnkSize).to_bytes(4, byteorder='little')
+                sbnkHeader[5] = (sbnkSize - 0x10).to_bytes(4, byteorder='little')
+                testPath = f"{outfileArg}/Files/{itemString[BANK]}/{fName}"
+                with open(testPath, "wb") as sbnkFile:
+                    for ii, listItem in enumerate(sbnkHeader):
+                        sbnkFile.write(listItem)
+                    for ii, listItem in enumerate(sbnkData):
+                        sbnkFile.write(listItem)
+
+
+    for i, fName in enumerate(names[FILE]):  # Check for WAVEARC source files
+        testPath = f"{outfileArg}/Files/{itemString[itemExt.index(fName[-5:])]}/{fName}"
+        if not os.path.exists(testPath):
+            if fName[-5:] == ".swar":  # can the swar be built?
+                swavName = fileBlock.file[i].subFile
+                swarTemp = []
+                for ii, sName in enumerate(swavName):
+                    testPath = f"{outfileArg}/Files/{itemString[WAVARC]}/{fName[:-5]}/{sName}"
+                    if not os.path.exists(testPath):
+                        raise Exception(f"Missing File:{testPath}")
+                    with open(testPath, "rb") as tempFile:
+                        swarTemp.append(bytearray(tempFile.read()))
+                testPath = f"{outfileArg}/Files/{itemString[WAVARC]}/{fName}"
+                with open(testPath, "wb") as swarFile:
+                    swarSize = sum(len(sf[0x18:]) for sf in swarTemp)
+                    swarFile.write(b'SWAR')  # Header
+                    swarFile.write(b'\xFF\xFE\x00\x01')  # magic
+                    swarFile.write((swarSize + 0x3C + (len(swarTemp) * 4)).to_bytes(4, byteorder='little'))
+                    swarFile.write(b'\x10\x00\x01\x00')  # structure size and blocks
+                    swarFile.write(b'DATA')
+                    swarFile.write((swarSize + 0x2C + (len(swarTemp) * 4)).to_bytes(4, byteorder='little'))
+                    swarFile.write(b'\x00' * 32)  # reserved
+                    swarFile.write((len(swarTemp)).to_bytes(4, byteorder='little'))
+                    swarPointer = 0x3C + (len(swarTemp) * 4)  # where the first swav will be in the file
+                    for ii, sFile in enumerate(swarTemp):
+                        swarFile.write((swarPointer).to_bytes(4, byteorder='little'))
+                        swarPointer += len(sFile[0x18:])
+                    for ii, sFile in enumerate(swarTemp):
+                        swarFile.write(sFile[0x18:])
+
+
     curFile = 0
     tFileBuffer = []
-    for i, fName in enumerate(names[FILE]):
+    for i, fName in enumerate(names[FILE]):  # Pack the binary files
         testPath = f"{outfileArg}/Files/{itemString[itemExt.index(fName[-5:])]}/{fName}"
         if not os.path.exists(testPath):
             testPath = f"{outfileArg}/Files/{fName}"
             if not os.path.exists(testPath):
-                if fName[-5:] == ".swar":  # can the swar be built?
-                    swavName = fileBlock.file[i].subFile
-                    swarTemp = []
-                    for ii, sName in enumerate(swavName):
-                        testPath = f"{outfileArg}/Files/{itemString[3]}/{fName[:-5]}/{sName}"
-                        if not os.path.exists(testPath):
-                            raise Exception(f"Missing File:{testPath}")
-                        with open(testPath, "rb") as tempFile:
-                            swarTemp.append(bytearray(tempFile.read()))
-                    testPath = f"{outfileArg}/Files/{itemString[3]}/{fName}"
-                    with open(testPath, "wb") as swarFile:
-                        swarSize = sum(len(sf[0x18:]) for sf in swarTemp)
-                        swarFile.write(b'SWAR')  # Header
-                        swarFile.write(b'\xFF\xFE\x00\x01')  # magic
-                        swarFile.write((swarSize + 0x3C + (len(swarTemp) * 4)).to_bytes(4, byteorder='little'))
-                        swarFile.write(b'\x10\x00\x01\x00')  # structure size and blocks
-                        swarFile.write(b'DATA')
-                        swarFile.write((swarSize + 0x2C + (len(swarTemp) * 4)).to_bytes(4, byteorder='little'))
-                        swarFile.write(b'\x00' * 32)  # reserved
-                        swarFile.write((len(swarTemp)).to_bytes(4, byteorder='little'))
-                        swarPointer = 0x3C + (len(swarTemp) * 4)  # where the first swav will be in the file
-                        for ii, sFile in enumerate(swarTemp):
-                            swarFile.write((swarPointer).to_bytes(4, byteorder='little'))
-                            swarPointer += len(sFile[0x18:])
-                        for ii, sFile in enumerate(swarTemp):
-                            swarFile.write(sFile[0x18:])
-                elif fName[-5:] == ".sbnk":  # can the sbnk be built?
-                    testPath = f"{outfileArg}/Files/{itemString[2]}/{fName[:-5]}.txt"
-                    if not os.path.exists(testPath):
-                        raise Exception(f"Missing File:{testPath}")
-                    with open(testPath, "r") as sbnkIDFile:
-                        done = False
-                        sbnkLines = []
-                        numInst = 0
-                        while not done:
-                            thisLine = sbnkIDFile.readline()
-                            if not thisLine:
-                                done = True
-                            thisLine = thisLine.split(";")  # ignore anything commented out
-                            thisLine = thisLine[0]
-                            thisLine = thisLine.split("\n")  # remove newline
-                            thisLine = thisLine[0]
-                            if thisLine != "":
-                                sbnkLines.append(thisLine)
-                                if thisLine.find("\t") == -1 and thisLine.find("Unused") == -1:  # Don't count unused or sub definitions
-                                    numInst += 1
-                    sbnkHeader = []
-                    sbnkData = []
-                    prevPointer = b'\x00\x00\x00\x00'
-                    sbnkHeader.append(b'SBNK')  # Header
-                    sbnkHeader.append(b'\xFF\xFE\x00\x01')  # magic
-                    sbnkHeader.append(b'\x00\x00\x00\x00')  # Reserve for sbnk size
-                    sbnkHeader.append(b'\x10\x00\x01\x00')  # structure size and blocks
-                    sbnkHeader.append(b'DATA')
-                    sbnkHeader.append(b'\x00\x00\x00\x00')  # Reserve for struct size
-                    sbnkHeader.append(b'\x00' * 32)  # reserved
-                    sbnkHeader.append((numInst).to_bytes(4, byteorder='little'))  # Number of instruments
-                    for ii in range(numInst):
-                        sbnkHeader.append(b'\x00\x00\x00\x00')  # Reserve for pointers
-                    for ii, inst in enumerate(sbnkLines):
-                        thisLine = inst
-                        if thisLine.find("\t") == -1:
-                            thisLine = thisLine.split(", ")
-                            if thisLine[1] == "SameAsAbove":
-                                sbnkHeader[8 + int(thisLine[0])] = prevPointer
-                            elif thisLine[1] != "0" and thisLine[1] != "NULL":
-                                if thisLine[1] == "Single":
-                                    thisLine[1] = "1"
-                                elif thisLine[1] == "PSG1":
-                                    thisLine[1] = "2"
-                                elif thisLine[1] == "PSG2":
-                                    thisLine[1] = "3"
-                                elif thisLine[1] == "PSG3":
-                                    thisLine[1] = "4"
-                                elif thisLine[1] == "Drums":
-                                    thisLine[1] = "16"
-                                elif thisLine[1] == "Keysplit":
-                                    thisLine[1] = "17"
-                                sbnkHeaderSize = (numInst * 4) + 0x3C
-                                if thisLine[0] == "Unused":
-                                    for x, unusedData in enumerate(thisLine[1:]):
-                                        sbnkData.append((int(unusedData)).to_bytes(1, byteorder='little'))
-                                else:
-                                    prevPointer = (int(thisLine[1]) + ((sbnkHeaderSize + sum(len(tf) for tf in sbnkData)) << 8)).to_bytes(4, byteorder='little')
-                                    sbnkHeader[8 + int(thisLine[0])] = prevPointer
-                                if int(thisLine[1]) < 16:
-                                    sbnkData.append((int(thisLine[2])).to_bytes(2, byteorder='little'))
-                                    sbnkData.append((int(thisLine[3])).to_bytes(2, byteorder='little'))
-                                    sbnkData.append((int(thisLine[4])).to_bytes(1, byteorder='little'))
-                                    sbnkData.append((int(thisLine[5])).to_bytes(1, byteorder='little'))
-                                    sbnkData.append((int(thisLine[6])).to_bytes(1, byteorder='little'))
-                                    sbnkData.append((int(thisLine[7])).to_bytes(1, byteorder='little'))
-                                    sbnkData.append((int(thisLine[8])).to_bytes(1, byteorder='little'))
-                                    sbnkData.append((int(thisLine[9])).to_bytes(1, byteorder='little'))
-                                elif int(thisLine[1]) == 16:
-                                    sbnkData.append((int(thisLine[2])).to_bytes(1, byteorder='little'))
-                                    sbnkData.append((int(thisLine[3])).to_bytes(1, byteorder='little'))
-                                elif int(thisLine[1]) == 17:
-                                    sbnkData.append((int(thisLine[2])).to_bytes(1, byteorder='little'))
-                                    sbnkData.append((int(thisLine[3])).to_bytes(1, byteorder='little'))
-                                    sbnkData.append((int(thisLine[4])).to_bytes(1, byteorder='little'))
-                                    sbnkData.append((int(thisLine[5])).to_bytes(1, byteorder='little'))
-                                    sbnkData.append((int(thisLine[6])).to_bytes(1, byteorder='little'))
-                                    sbnkData.append((int(thisLine[7])).to_bytes(1, byteorder='little'))
-                                    sbnkData.append((int(thisLine[8])).to_bytes(1, byteorder='little'))
-                                    sbnkData.append((int(thisLine[9])).to_bytes(1, byteorder='little'))
-                        else:
-                            thisLine = thisLine.split("\t")
-                            thisLine = thisLine[1]
-                            thisLine = thisLine.split(", ")
-                            sbnkData.append((int(thisLine[0])).to_bytes(2, byteorder='little'))
-                            sbnkData.append((int(thisLine[1])).to_bytes(2, byteorder='little'))
-                            sbnkData.append((int(thisLine[2])).to_bytes(2, byteorder='little'))
-                            sbnkData.append((int(thisLine[3])).to_bytes(1, byteorder='little'))
-                            sbnkData.append((int(thisLine[4])).to_bytes(1, byteorder='little'))
-                            sbnkData.append((int(thisLine[5])).to_bytes(1, byteorder='little'))
-                            sbnkData.append((int(thisLine[6])).to_bytes(1, byteorder='little'))
-                            sbnkData.append((int(thisLine[7])).to_bytes(1, byteorder='little'))
-                            sbnkData.append((int(thisLine[8])).to_bytes(1, byteorder='little'))
-                    sbnkSize = sum(len(tf) for tf in sbnkData) + sbnkHeaderSize
-                    while (sbnkSize & 0xFFFFFFFC) != sbnkSize:
-                        sbnkData.append(b'\x00')  # pad to the nearest 0x4 byte alignment
-                        sbnkSize += 1
-                    sbnkHeader[2] = (sbnkSize).to_bytes(4, byteorder='little')
-                    sbnkHeader[5] = (sbnkSize - 0x10).to_bytes(4, byteorder='little')
-                    testPath = f"{outfileArg}/Files/{itemString[2]}/{fName}"
-                    with open(testPath, "wb") as sbnkFile:
-                        for ii, listItem in enumerate(sbnkHeader):
-                            sbnkFile.write(listItem)
-                        for ii, listItem in enumerate(sbnkData):
-                            sbnkFile.write(listItem)
-                else:
-                    raise Exception(f"Missing File:{testPath}")
+                raise Exception(f"Missing File:{testPath}")
         curFileLoc = (len(SDAT) + sum(len(tf) for tf in tFileBuffer))
         write_long((curFile * 16) + 12 + fatBlockOffset, curFileLoc)  # write file pointer to the fatBlock
         with open(testPath, "rb") as tempFile:
