@@ -8,7 +8,7 @@ import json
 from shutil import copyfile
 
 # SDAT-Tool by FroggestSpirit
-version = "1.2.0"
+version = "1.2.1"
 # Unpacks and builds SDAT files
 # Make backups, this can overwrite files without confirmation
 
@@ -220,7 +220,7 @@ class InfoBlock:
                         self.v[i] = read_byte(None)
                     self.reserved = [None] * 7
                     for i in range(7):
-                        self.reserved = read_byte(None)
+                        self.reserved[i] = read_byte(None)
         def write(self):
             if self.name != "":
                 append_byte(self.count)
@@ -249,7 +249,7 @@ class InfoBlock:
                     self.ply = read_byte(None)
                     self.reserved = [None] * 5
                     for i in range(5):
-                        self.reserved = read_byte(None)
+                        self.reserved[i] = read_byte(None)
         def write(self):
             if self.name != "":
                 append_short(names[FILE].index(self.fileName))
