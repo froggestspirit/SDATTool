@@ -1007,13 +1007,44 @@ if mode:  # Build
                                 thisLine = thisLine.split(";")[0]  # ignore anything commented out
                                 thisLine = thisLine.split("\n")[0]  # remove newline
                                 if thisLine != "":
-                                    if "Instrument" in thisLine:
-                                        thisLine = int(thisLine.split(" ")[1])
-                                        if not thisLine in tempInstUsed:
-                                            tempInstUsed.append(thisLine)
+                                    sseqLines.append(thisLine)
+                            for channel in range(16):
+                                done = False
+                                if not f"Track_{channel}:" in sseqLines:
+                                    done = True
+                                else:
+                                    curLine = sseqLines.index(f"Track_{channel}:") + 1
+                                    curInst = 0
+                                    retCall = -1
+                                while not done:
+                                    if sseqLines[curLine].find("\t") > -1:
+                                        if sseqLines[curLine] == "\tTrackEnd":
+                                            done = True
+                                        elif sseqLines[curLine] == "\tReturn":
+                                            if retCall > -1:
+                                                curLine = retCall
+                                                retCall = -1
+                                        elif sseqLines[curLine].replace("\t","")[:2] in sseqNote:
+                                            curNote = sseqNote.index(sseqLines[curLine].replace("\t","")[:2]) + (int(sseqLines[curLine][3]) * 12)
+                                            if not (curInst << 7) + curNote in tempInstUsed:
+                                                tempInstUsed.append((curInst << 7) + curNote)
+                                                testvar = sseqNote.index(sseqLines[curLine].replace("\t","")[:2])
+                                                print(f"Adding instrument: {curInst}, Note: {curNote}, {(curInst << 7) + curNote}")
+                                        elif sseqLines[curLine].replace("\t","").split(" ")[0] == "Instrument":
+                                            curInst = int(sseqLines[curLine].replace("\t","").split(" ")[1])
+                                        elif sseqLines[curLine].replace("\t","").split(" ")[0] == "Jump":
+                                            done = True
+                                        elif sseqLines[curLine].replace("\t","").split(" ")[0] == "Call":
+                                            retCall = curLine
+                                            t = sseqLines[curLine].replace('\t','').split(' ')[1]
+                                            curLine = sseqLines.index(f"{t}:")
+                                    curLine += 1
+                                        
                         progUsedName.append(fName)
                         progUsed.append(tempInstUsed)
                     tempInstUsed = progUsed[progUsedName.index(fName)]
+                    tempInstUsed.sort()
+                    print(tempInstUsed)
                     bnkID = list(bnk.name for bnk in infoBlock.bankInfo).index(infoBlock.seqInfo[i].bnk)
                     bnkFile = infoBlock.bankInfo[bnkID].fileName
                     fileBlock.file.append(fileBlock.File(f"{item.name}.sbnk", "BANK"))
@@ -1025,6 +1056,7 @@ if mode:  # Build
                         sbnkLines = []
                         numInst = 0
                         curInst = -1
+                        curInstType = -1
                         while not done:
                             thisLine = sbnkIDFile.readline()
                             if not thisLine:
@@ -1035,23 +1067,52 @@ if mode:  # Build
                                 if thisLine.find("\t") == -1:  # Don't count unused or sub definitions
                                     thisLine = thisLine.replace(" ","").split(",")
                                     curInst = int(thisLine[0])
-                                    if curInst in tempInstUsed:
+                                    if curInst in ((prog >> 7) for prog in tempInstUsed):
+                                        print(f"Found {curInst}")
                                         if thisLine[1] == "Single":
+                                            curInstType = -1
                                             if not int(thisLine[2]) in usedSwav[int(thisLine[3])]:
                                                 usedSwav[int(thisLine[3])].append(int(thisLine[2]))
                                             thisLine[2] = str(usedSwav[int(thisLine[3])].index(int(thisLine[2])))
                                             sbnkLines.append(", ".join(thisLine))
-                                        else:
+                                        elif thisLine[1] == "Drums":
+                                            curInstType = 0
+                                            drumRange = [int(thisLine[2]), int(thisLine[3])]
+                                            sbnkLines.append(", ".join(thisLine))
+                                        elif thisLine[1] == "Keysplit":
+                                            curInstType = 1
+                                            keySplits = [-1, int(thisLine[2]), int(thisLine[3]), int(thisLine[4]), int(thisLine[5]), int(thisLine[6]), int(thisLine[7]), int(thisLine[8]), int(thisLine[9])]
                                             sbnkLines.append(", ".join(thisLine))
                                     else:
                                         sbnkLines.append(f"{thisLine[0]}, NULL")
+                                        curInstType = -1
                                 elif thisLine.find("\t") != -1:
                                     thisLine = thisLine.replace(" ","").split(",")
-                                    if curInst in tempInstUsed:
-                                        if not int(thisLine[1]) in usedSwav[int(thisLine[2])]:
-                                            usedSwav[int(thisLine[2])].append(int(thisLine[1]))
-                                        thisLine[1] = str(usedSwav[int(thisLine[2])].index(int(thisLine[1])))
+                                    if curInstType == 0:  # Drums
+                                        if (curInst << 7) + drumRange[0] in tempInstUsed:
+                                            if not int(thisLine[1]) in usedSwav[int(thisLine[2])]:
+                                                usedSwav[int(thisLine[2])].append(int(thisLine[1]))
+                                            thisLine[1] = str(usedSwav[int(thisLine[2])].index(int(thisLine[1])))
+                                        else:
+                                            thisLine[1] = "0"
                                         sbnkLines.append(", ".join(thisLine))
+                                        drumRange[0] += 1
+                                    elif curInstType == 1:  # Keysplit
+                                        found = False
+                                        print(f"Checking inst {curInst} keys {keySplits[0] + 1} - {keySplits[1]}")
+                                        for split in range(keySplits[1] - keySplits[0]):
+                                            if (curInst << 7) + split + keySplits[0] + 1 in tempInstUsed:
+                                                found = True
+                                        if found:
+                                            print(f"Found")
+                                            if not int(thisLine[1]) in usedSwav[int(thisLine[2])]:
+                                                usedSwav[int(thisLine[2])].append(int(thisLine[1]))
+                                            thisLine[1] = str(usedSwav[int(thisLine[2])].index(int(thisLine[1])))
+                                        else:
+                                            print(f"Not Found")
+                                            thisLine[1] = "0"
+                                        sbnkLines.append(", ".join(thisLine))
+                                        del keySplits[0]
                                 else:
                                     sbnkLines.append(thisLine)
                     with open(f"{outfileArg}/Files/{itemString[BANK]}/{item.name}.txt", "w") as sbnkIDFile:
