@@ -1067,7 +1067,7 @@ if mode:  # Build
                                     thisLine = thisLine.replace(" ","").split(",")
                                     curInst = int(thisLine[0])
                                     if curInst in ((prog >> 7) for prog in tempInstUsed):
-                                        if thisLine[1] == "Single":
+                                        if thisLine[1] in ["Single", "PSG1", "PSG2", "PSG3"]:
                                             curInstType = -1
                                             if not int(thisLine[2]) in usedSwav[int(thisLine[3])]:
                                                 usedSwav[int(thisLine[3])].append(int(thisLine[2]))
