@@ -8,7 +8,7 @@ import json
 from shutil import copyfile
 
 # SDAT-Tool by FroggestSpirit
-version = "1.2.1"
+version = "1.2.2"
 # Unpacks and builds SDAT files
 # Make backups, this can overwrite files without confirmation
 
@@ -1049,6 +1049,7 @@ if mode:  # Build
                     fileBlock.file[-1].MD5 = fileBlock.file[list(file.name for file in fileBlock.file).index(bnkFile)].MD5
                     bnkFile = bnkFile.replace(".sbnk", ".txt")
                     usedSwav = [[], [], [], []]
+                    orderSwav = []
                     with open(f"{outfileArg}/Files/{itemString[BANK]}/{bnkFile}", "r") as sbnkIDFile:
                         done = False
                         sbnkLines = []
@@ -1070,7 +1071,9 @@ if mode:  # Build
                                             curInstType = -1
                                             if not int(thisLine[2]) in usedSwav[int(thisLine[3])]:
                                                 usedSwav[int(thisLine[3])].append(int(thisLine[2]))
-                                            thisLine[2] = str(usedSwav[int(thisLine[3])].index(int(thisLine[2])))
+                                                orderSwav.append(int(thisLine[2]) + (int(thisLine[3]) << 16))
+                                            thisLine[2] = str(orderSwav.index(int(thisLine[2]) + (int(thisLine[3]) << 16)))
+                                            thisLine[3] = "0"
                                             sbnkLines.append(", ".join(thisLine))
                                         elif thisLine[1] == "Drums":
                                             curInstType = 0
@@ -1089,9 +1092,12 @@ if mode:  # Build
                                         if (curInst << 7) + drumRange[0] in tempInstUsed:
                                             if not int(thisLine[1]) in usedSwav[int(thisLine[2])]:
                                                 usedSwav[int(thisLine[2])].append(int(thisLine[1]))
-                                            thisLine[1] = str(usedSwav[int(thisLine[2])].index(int(thisLine[1])))
+                                                orderSwav.append(int(thisLine[1]) + (int(thisLine[2]) << 16))
+                                            thisLine[1] = str(orderSwav.index(int(thisLine[1]) + (int(thisLine[2]) << 16)))
+                                            thisLine[2] = "0"
                                         else:
                                             thisLine[1] = "0"
+                                            thisLine[2] = "0"
                                         sbnkLines.append(", ".join(thisLine))
                                         drumRange[0] += 1
                                     elif curInstType == 1:  # Keysplit
@@ -1102,9 +1108,12 @@ if mode:  # Build
                                         if found:
                                             if not int(thisLine[1]) in usedSwav[int(thisLine[2])]:
                                                 usedSwav[int(thisLine[2])].append(int(thisLine[1]))
-                                            thisLine[1] = str(usedSwav[int(thisLine[2])].index(int(thisLine[1])))
+                                                orderSwav.append(int(thisLine[1]) + (int(thisLine[2]) << 16))
+                                            thisLine[1] = str(orderSwav.index(int(thisLine[1]) + (int(thisLine[2]) << 16)))
+                                            thisLine[2] = "0"
                                         else:
                                             thisLine[1] = "0"
+                                            thisLine[2] = "0"
                                         sbnkLines.append(", ".join(thisLine))
                                         del keySplits[0]
                                 else:
@@ -1118,24 +1127,24 @@ if mode:  # Build
                     infoBlock.bankInfo[-1].name = f"BANK_{item.name}"
                     infoBlock.bankInfo[-1].fileName = f"{item.name}.sbnk"
                     infoBlock.bankInfo[-1].unkA = infoBlock.bankInfo[bnkID].unkA
+                    infoBlock.bankInfo[-1].wa[0] = f"WA_{item.name}"
+                    infoBlock.wavarcInfo.append(infoBlock.BANKInfo("", blank=True))
+                    infoBlock.wavarcInfo[-1].name = f"WA_{item.name}"
+                    infoBlock.wavarcInfo[-1].fileName = f"{item.name}_WA.swar"
+                    infoBlock.wavarcInfo[-1].unkA = 0
+                    fileBlock.file.append(fileBlock.File(f"{item.name}_WA.swar", "WAVARC"))
+                    fileBlock.file[-1].subFile = []
+                    if not os.path.exists(f"{outfileArg}/Files/{itemString[WAVARC]}/{item.name}_WA"):
+                        os.makedirs(f"{outfileArg}/Files/{itemString[WAVARC]}/{item.name}_WA")
+                    swarFileID = [None, None, None, None]
                     for j in range(4):
                         if len(usedSwav[j]) > 0:
                             if infoBlock.bankInfo[bnkID].wa[j] != "":
                                 swarID = list(swar.name for swar in infoBlock.wavarcInfo).index(infoBlock.bankInfo[bnkID].wa[j])
-                                swarFileID = list(swar.name for swar in fileBlock.file).index(infoBlock.wavarcInfo[swarID].fileName)
-                                infoBlock.bankInfo[-1].wa[j] = f"WA{j}_{item.name}"
-                                infoBlock.wavarcInfo.append(infoBlock.BANKInfo("", blank=True))
-                                infoBlock.wavarcInfo[-1].name = f"WA{j}_{item.name}"
-                                infoBlock.wavarcInfo[-1].fileName = f"{item.name}_WA{j}.swar"
-                                infoBlock.wavarcInfo[-1].unkA = infoBlock.wavarcInfo[swarID].unkA
-                                fileBlock.file.append(fileBlock.File(f"{item.name}_WA{j}.swar", "WAVARC"))
-
-                                if not os.path.exists(f"{outfileArg}/Files/{itemString[WAVARC]}/{item.name}_WA{j}"):
-                                    os.makedirs(f"{outfileArg}/Files/{itemString[WAVARC]}/{item.name}_WA{j}")
-                                fileBlock.file[-1].subFile = []
-                                for sf in usedSwav[j]:
-                                    fileBlock.file[-1].subFile.append(fileBlock.file[swarFileID].subFile[sf])
-                                    copyfile(f"{outfileArg}/Files/{itemString[WAVARC]}/{fileBlock.file[swarFileID].name.split('.')[0]}/{fileBlock.file[swarFileID].subFile[sf]}", f"{outfileArg}/Files/{itemString[WAVARC]}/{item.name}_WA{j}/{fileBlock.file[swarFileID].subFile[sf]}")
+                                swarFileID[j] = list(swar.name for swar in fileBlock.file).index(infoBlock.wavarcInfo[swarID].fileName)
+                    for sf in orderSwav:
+                        fileBlock.file[-1].subFile.append(f"{sf >> 16}_{fileBlock.file[swarFileID[sf >> 16]].subFile[sf & 0xFFFF]}")
+                        copyfile(f"{outfileArg}/Files/{itemString[WAVARC]}/{fileBlock.file[swarFileID[sf >> 16]].name.split('.')[0]}/{fileBlock.file[swarFileID[sf >> 16]].subFile[sf & 0xFFFF]}", f"{outfileArg}/Files/{itemString[WAVARC]}/{item.name}_WA/{sf >> 16}_{fileBlock.file[swarFileID[sf >> 16]].subFile[sf & 0xFFFF]}")
 
 
     if optimize:

@@ -31,6 +31,13 @@ Un-edited rebuilt SDAT files should be 1:1, if an SDAT is ripped from a game, de
 
 -or works by creating a copy of the sbnk and swars used by each sseq, and tries to only build them with the instruments used in the sseq, removing the rest. The file size is generally larger, but the size of the sbnk and swars that need to load with the sseq should hopefully be smaller. This will also write a lot more files to the unpack directory
 
+To make better use of the -or option, first unpack a SDAT, then re-build it with -or. After, unpack that new SDAT, and rebuild that new one with -o
+
+
+New in version 1.2.2:
+
+-Optimize for RAM option now creates only one SWAR per sseq, even if it's bank normally uses more
+
 New in version 1.2.1:
 
 -Fixes for optimize for RAM option
