@@ -55,17 +55,17 @@ class SDAT:
                         self.unkB = [None] * 2
                         for i in range(2):
                             self.unkB[i] = read_byte(sdat)
-            def write(self):
+            def write(self, sdat):
                 if self.name != "":
-                    append_short(names[FILE].index(self.fileName))
-                    append_short(self.unkA)
-                    append_short([i.name for i in infoBlock.bankInfo].index(self.bnk))
-                    append_byte(self.vol)
-                    append_byte(self.cpr)
-                    append_byte(self.ppr)
-                    append_byte([i.name for i in infoBlock.playerInfo].index(self.ply))
+                    append_short(sdat, sdat.names[FILE].index(self.fileName))
+                    append_short(sdat, self.unkA)
+                    append_short(sdat, [i.name for i in sdat.infoBlock.bankInfo].index(self.bnk))
+                    append_byte(sdat, self.vol)
+                    append_byte(sdat, self.cpr)
+                    append_byte(sdat, self.ppr)
+                    append_byte(sdat, [i.name for i in sdat.infoBlock.playerInfo].index(self.ply))
                     for i in range(2):
-                        append_byte(self.unkB[i])
+                        append_byte(sdat, self.unkB[i])
         class SEQARCInfo:
             def __init__(self, sdat, name, dict=None):
                 if dict:
@@ -80,10 +80,10 @@ class SDAT:
                         self.fileName = read_filename(sdat)
                         self.unkA = read_short(sdat)
                         self.zippedName = None
-            def write(self):
+            def write(self, sdat):
                 if self.name != "":
-                    append_short(names[FILE].index(self.fileName))
-                    append_short(self.unkA)
+                    append_short(sdat, sdat.names[FILE].index(self.fileName))
+                    append_short(sdat, self.unkA)
         class BANKInfo:
             def __init__(self, sdat, name, dict=None, blank=False):
                 if dict:
@@ -105,18 +105,17 @@ class SDAT:
                     self.fileName = None
                     self.unkA = None
                     self.wa = [""] * 4
-            def write(self):
+            def write(self, sdat):
                 if self.name != "":
-                    append_short(names[FILE].index(self.fileName))
-                    append_short(self.unkA)
+                    append_short(sdat, sdat.names[FILE].index(self.fileName))
+                    append_short(sdat, self.unkA)
                     for i in range(4):
                         if(self.wa[i] == ""):
-                            append_short(0xFFFF)
+                            append_short(sdat, 0xFFFF)
                         else:
-                            append_short([i.name for i in infoBlock.wavarcInfo].index(self.wa[i]))
+                            append_short(sdat, [i.name for i in sdat.infoBlock.wavarcInfo].index(self.wa[i]))
         class WAVARCInfo:
             def __init__(self, sdat, name, dict=None, blank=False):
-                self.sdat = sdat
                 if dict:
                     self.name = dict["name"]
                     if self.name != "":
@@ -131,10 +130,10 @@ class SDAT:
                     self.name = None
                     self.fileName = None
                     self.unkA = None
-            def write(self):
+            def write(self, sdat):
                 if self.name != "":
-                    append_short(self.sdat.names[FILE].index(self.fileName))
-                    append_short(self.unkA)
+                    append_short(sdat, sdat.names[FILE].index(self.fileName))
+                    append_short(sdat, self.unkA)
         class PLAYERInfo:
             def __init__(self, sdat, name, dict=None):
                 if dict:
@@ -151,12 +150,12 @@ class SDAT:
                         for i in range(3):
                             self.padding[i] = read_byte(sdat)
                         self.unkB = read_long(sdat)
-            def write(self):
+            def write(self, sdat):
                 if self.name != "":
-                    append_byte(self.unkA)
+                    append_byte(sdat, self.unkA)
                     for i in range(3):
-                        append_byte(self.padding[i])
-                    append_long(self.unkB)
+                        append_byte(sdat, self.padding[i])
+                    append_long(sdat, self.unkB)
         class GROUPInfo:
             def __init__(self, sdat, name, dict=None):
                 class SubGROUP:
@@ -173,7 +172,7 @@ class SDAT:
                         self.count = dict["count"]
                         self.subGroup = []
                         for i in range(len(dict["subGroup"])):
-                            self.subGroup.append(SubGROUP(self.sdat, dict=dict["subGroup"][i]))
+                            self.subGroup.append(SubGROUP(sdat, dict=dict["subGroup"][i]))
                 else:
                     self.name = name
                     if self.name != "":
@@ -181,12 +180,12 @@ class SDAT:
                         self.subGroup = [None] * self.count
                         for i in range(self.count):
                             self.subGroup[i] = SubGROUP(sdat)
-            def write(self):
+            def write(self, sdat):
                 if self.name != "":
-                    append_long(self.count)
+                    append_long(sdat, self.count)
                     for i in range(self.count):
-                        append_long(self.subGroup[i].type)
-                        append_long(self.subGroup[i].entry)
+                        append_long(sdat, self.subGroup[i].type)
+                        append_long(sdat, self.subGroup[i].entry)
         class PLAYER2Info:
             def __init__(self, sdat, name, dict=None):
                 if dict:
@@ -205,13 +204,13 @@ class SDAT:
                         self.reserved = [None] * 7
                         for i in range(7):
                             self.reserved[i] = read_byte(sdat)
-            def write(self):
+            def write(self, sdat):
                 if self.name != "":
-                    append_byte(self.count)
+                    append_byte(sdat, self.count)
                     for i in range(16):
-                        append_byte(self.v[i])
+                        append_byte(sdat, self.v[i])
                     for i in range(7):
-                        append_byte(self.reserved[i])
+                        append_byte(sdat, self.reserved[i])
         class STRMInfo:
             def __init__(self, sdat, name, dict=None):
                 if dict:
@@ -234,30 +233,29 @@ class SDAT:
                         self.reserved = [None] * 5
                         for i in range(5):
                             self.reserved[i] = read_byte(sdat)
-            def write(self):
+            def write(self, sdat):
                 if self.name != "":
-                    append_short(names[FILE].index(self.fileName))
-                    append_short(self.unkA)
-                    append_byte(self.vol)
-                    append_byte(self.pri)
-                    append_byte(self.ply)
+                    append_short(sdat, sdat.names[FILE].index(self.fileName))
+                    append_short(sdat, self.unkA)
+                    append_byte(sdat, self.vol)
+                    append_byte(sdat, self.pri)
+                    append_byte(sdat, self.ply)
                     for i in range(5):
-                        append_byte(self.reserved[i])
-        def __init__(self, sdat):
-            self.sdat = sdat
+                        append_byte(sdat, self.reserved[i])
+        def __init__(self):
             for group in infoBlockGroup:
                 exec(f"self.{group} = []")
-        def load(self, infile):
+        def load(self, sdat, infile):
             for index, group in enumerate(infoBlockGroup):
                 exec(f"""for i in range(len(infile['{group}'])):
-                    self.{group}.append(self.{infoBlockGroupType[index]}(self.sdat, None, dict=infile['{group}'][i]))""")
+                    self.{group}.append(self.{infoBlockGroupType[index]}(sdat, None, dict=infile['{group}'][i]))""")
 
-        def write(self, type, index=-1):
+        def write(self, sdat, type, index=-1):
             if index == -1:
                 for i in range(len(type)):
-                    type[i].write()
+                    type[i].write(sdat)
             else:
-                type[index].write()
+                type[index].write(sdat)
         def replace_file(self, type, oldFile, newFile):
             exec(f"""for item in self.{infoBlockGroup[eval(type)]}:
                 if item.name != "":

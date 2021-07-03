@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 # SDAT-Tool by FroggestSpirit
-version = "1.2.2"
+version = "1.3.0"
 # Unpacks and builds SDAT files
 # Make backups, this can overwrite files without confirmation
 
@@ -13,7 +13,8 @@ from shutil import copyfile
 
 from const import itemHeader, itemExt, itemString, infoBlockGroup, infoBlockGroupType, infoBlockGroupFile
 from Sdat import SDAT
-from util import read_long, read_short, get_string
+from Sseq import sseqCmdArgs, sseqCmdName, sseqNote
+from util import read_long, read_short, get_string, append_long, append_short, append_byte, write_long
 
 LONG = -4
 SHORT = -2
@@ -44,63 +45,63 @@ def unpack(args):  # Unpack
     sdat = SDAT()
     with open(args.SDATfile, "rb") as infile:
         sdat.data = bytearray(infile.read())
-    fileSize = len(sdat.data)
+    sdat.fileSize = len(sdat.data)
     sdat.pos = 8
-    SDATSize = read_long(sdat)
-    headerSize = read_short(sdat)
-    blocks = read_short(sdat)
-    if blocks == 4:
-        symbOffset = read_long(sdat)
-        symbSize = read_long(sdat)
-    infoOffset = read_long(sdat)
-    infoSize = read_long(sdat)
-    fatOffset = read_long(sdat)
-    fatSize = read_long(sdat)
-    fileOffset = read_long(sdat)
-    fileSize = read_long(sdat)
+    sdat.SDATSize = read_long(sdat)
+    sdat.headerSize = read_short(sdat)
+    sdat.blocks = read_short(sdat)
+    if sdat.blocks == 4:
+        sdat.symbOffset = read_long(sdat)
+        sdat.symbSize = read_long(sdat)
+    sdat.infoOffset = read_long(sdat)
+    sdat.infoSize = read_long(sdat)
+    sdat.fatOffset = read_long(sdat)
+    sdat.fatSize = read_long(sdat)
+    sdat.fileOffset = read_long(sdat)
+    sdat.fileSize = read_long(sdat)
 
     # Symb Block
-    seqarcName = []
-    seqarcNameID = []
-    if blocks == 4:
-        sdat.pos = symbOffset + 8
+    sdat.seqarcName = []
+    sdat.seqarcNameID = []
+    if sdat.blocks == 4:
+        sdat.pos = sdat.symbOffset + 8
         for i in range(8):
-            sdat.itemSymbOffset[i] = read_long(sdat, pos=sdat.pos + (i * 4)) + symbOffset
+            sdat.itemSymbOffset[i] = read_long(sdat, pos=sdat.pos + (i * 4)) + sdat.symbOffset
         for i in range(8):
             if i != SEQARC:
                 sdat.pos = sdat.itemSymbOffset[i]
                 entries = read_long(sdat, pos=sdat.pos)
                 for ii in range(entries):
-                    sdat.pos = read_long(sdat, pos=sdat.itemSymbOffset[i] + 4 + (ii * 4)) + symbOffset
+                    sdat.pos = read_long(sdat, pos=sdat.itemSymbOffset[i] + 4 + (ii * 4)) + sdat.symbOffset
                     sdat.names[i].append(get_string(sdat))
             else:
                 sdat.pos = sdat.itemSymbOffset[i]
                 entries = read_long(sdat, pos=sdat.pos)
                 for ii in range(entries):
-                    sdat.pos = read_long(sdat, pos=sdat.itemSymbOffset[i] + 4 + (ii * 8)) + symbOffset
+                    sdat.pos = read_long(sdat, pos=sdat.itemSymbOffset[i] + 4 + (ii * 8)) + sdat.symbOffset
                     sdat.names[i].append(get_string(sdat))
-                    sdat.pos = read_long(sdat, pos=sdat.itemSymbOffset[i] + 8 + (ii * 8)) + symbOffset
+                    sdat.pos = read_long(sdat, pos=sdat.itemSymbOffset[i] + 8 + (ii * 8)) + sdat.symbOffset
                     SEQARCSubOffset = sdat.pos
                     count = read_long(sdat, pos=sdat.pos)
                     for x in range(count):
-                        sdat.pos = read_long(sdat, pos=SEQARCSubOffset + 4 + (x * 4)) + symbOffset
+                        sdat.pos = read_long(sdat, pos=SEQARCSubOffset + 4 + (x * 4)) + sdat.symbOffset
                         if entries > 0:
-                            seqarcName.append(get_string(sdat))
-                            seqarcNameID.append(ii)                            
+                            sdat.seqarcName.append(get_string(sdat))
+                            sdat.seqarcNameID.append(ii)                            
 
     # Info Block
-    sdat.infoBlock = sdat.InfoBlock(sdat)
-    sdat.pos = infoOffset + 8
+    sdat.infoBlock = sdat.InfoBlock()
+    sdat.pos = sdat.infoOffset + 8
     for i in range(8):
-        sdat.itemOffset[i] = read_long(sdat, pos=sdat.pos + (i * 4)) + infoOffset
+        sdat.itemOffset[i] = read_long(sdat, pos=sdat.pos + (i * 4)) + sdat.infoOffset
     for i in range(8):
         sdat.pos = sdat.itemOffset[i]
         entries = read_long(sdat, pos=sdat.pos)
         for ii in range(entries):
-            sdat.pos = read_long(sdat, pos=sdat.itemOffset[i] + 4 + (ii * 4)) + infoOffset
-            if sdat.pos - infoOffset > 0x40:
+            sdat.pos = read_long(sdat, pos=sdat.itemOffset[i] + 4 + (ii * 4)) + sdat.infoOffset
+            if sdat.pos - sdat.infoOffset > 0x40:
                 count = read_long(sdat, pos=sdat.pos)  # count is only used for group
-                if blocks == 4 and ii < len(sdat.names[i]):
+                if sdat.blocks == 4 and ii < len(sdat.names[i]):
                     iName = sdat.names[i][ii]
                 else:
                     iName = f"{itemString[i]}_{ii}"
@@ -112,7 +113,7 @@ def unpack(args):  # Unpack
                 iName = ""
             exec(f"sdat.infoBlock.{infoBlockGroup[i]}.append(sdat.infoBlock.{infoBlockGroupType[i]}(sdat, iName))")
             if i == SEQARC:
-                sdat.infoBlock.seqarcInfo[-1].zippedName = [seqarcName[id] for id, num in enumerate(seqarcNameID) if num == ii]
+                sdat.infoBlock.seqarcInfo[-1].zippedName = [sdat.seqarcName[id] for id, num in enumerate(sdat.seqarcNameID) if num == ii]
     with open(f"{args.folder}/InfoBlock.json", "w") as outfile:
         outfile.write(json.dumps(sdat.infoBlock, cls=MyEncoder, indent=4)  # make the JSON file pretty at the expense of ugly code
             .replace(f"\n{' '*16}","")
@@ -125,7 +126,7 @@ def unpack(args):  # Unpack
 
     # FAT Block / File Block
     sdat.fileBlock = sdat.FileBlock()
-    sdat.pos = fatOffset + 8
+    sdat.pos = sdat.fatOffset + 8
     entries = read_long(sdat, pos=sdat.pos)
     if not os.path.exists(f"{args.folder}/Files"):
         os.makedirs(f"{args.folder}/Files")
@@ -140,8 +141,8 @@ def unpack(args):  # Unpack
     if not os.path.exists(f"{args.folder}/Files/{itemString[STRM]}"):
         os.makedirs(f"{args.folder}/Files/{itemString[STRM]}")
     for i in range(entries):
-        sdat.pos = read_long(sdat, pos=fatOffset + 12 + (i * 16))
-        tempSize = read_long(sdat, pos=fatOffset + 16 + (i * 16))
+        sdat.pos = read_long(sdat, pos=sdat.fatOffset + 12 + (i * 16))
+        tempSize = read_long(sdat, pos=sdat.fatOffset + 16 + (i * 16))
         done = False
         fileRefID = 0
         fileHeader = sdat.data[sdat.pos:(sdat.pos + 4)]
@@ -163,7 +164,7 @@ def unpack(args):  # Unpack
         if fileRefID != -1:
             tempPath = f"{args.folder}/Files/{itemString[sdat.fileType[fileRefID]]}/{sdat.names[FILE][fileRefID]}"
             tempName = sdat.names[FILE][fileRefID]
-        sdat.fileBlock.file.append(FileBlock.File(f"{tempName}{tempExt}", tempType))
+        sdat.fileBlock.file.append(sdat.fileBlock.File(f"{tempName}{tempExt}", tempType))
         if fileHeader == b'SWAR':
             numSwav = read_long(sdat, pos=sdat.pos + 0x38)
             sdat.fileBlock.file[-1].subFile = []
@@ -449,16 +450,17 @@ def build(args):  # Build
     if not os.path.exists(f"{args.folder}/InfoBlock.json"):
         raise Exception("Missing InfoBlock.json\n")
     print("Building...")
-    blocks = 4
+    sdat = SDAT()
+    sdat.blocks = 4
     if args.noSymbBlock:
-        blocks = 3
+        sdat.blocks = 3
 
     with open(f"{args.folder}/FileBlock.json", "r") as infile:
         sdat.fileBlock = sdat.FileBlock()
         sdat.fileBlock.load(json.load(infile))
     with open(f"{args.folder}/InfoBlock.json", "r") as infile:
         sdat.infoBlock = sdat.InfoBlock()
-        sdat.infoBlock.load(json.load(infile))
+        sdat.infoBlock.load(sdat, json.load(infile))
 
     if args.optimizeRAM:
         for i, item in enumerate(sdat.infoBlock.seqInfo):  # Check for SSEQ source files
@@ -699,12 +701,12 @@ def build(args):  # Build
     sdat.data = bytearray(b'SDAT')  # Header
     sdat.data += b'\xFF\xFE\x00\x01'  # Magic
     sdat.data += bytearray(4)  # File size
-    append_short((blocks + 4) * 8)  # Header size
-    append_short(blocks)  # Blocks
-    sdat.data += bytearray((blocks + 2) * 8)  # reserve space for the offsets and sizes
+    append_short(sdat, (sdat.blocks + 4) * 8)  # Header size
+    append_short(sdat, sdat.blocks)  # Blocks
+    sdat.data += bytearray((sdat.blocks + 2) * 8)  # reserve space for the offsets and sizes
     headeri = 0  # help point back to the block offsets and sizes when ready to write
 
-    if blocks == 4:  # symbBlock
+    if sdat.blocks == 4:  # symbBlock
         symbBlockOffset = len(sdat.data)
         sdat.data += b'SYMB'  # Header
         sdat.data += bytearray(4)  # symbBlock size
@@ -713,49 +715,49 @@ def build(args):  # Build
 
         for i in range(8):
             sdat.itemSymbOffset[i] = len(sdat.data)
-            write_long(symbBlockOffset + (i * 4) + 8, sdat.itemSymbOffset[i] - symbBlockOffset)
-            append_long(sdat.itemCount[i])
+            write_long(sdat, symbBlockOffset + (i * 4) + 8, sdat.itemSymbOffset[i] - symbBlockOffset)
+            append_long(sdat, sdat.itemCount[i])
             if i != SEQARC:
                 sdat.data += bytearray(sdat.itemCount[i] * 4)
             else:
                 seqarcSymbSubOffset = []
                 sdat.data += bytearray(sdat.itemCount[i] * 8)  # this has sub-groups
                 for ii in range(sdat.itemCount[i]):
-                    write_long((sdat.itemSymbOffset[i] + 8) + (ii * 8), len(sdat.data) - symbBlockOffset)
+                    write_long(sdat, (sdat.itemSymbOffset[i] + 8) + (ii * 8), len(sdat.data) - symbBlockOffset)
                     seqarcSymbSubOffset.append(len(sdat.data))
-                    append_long(seqarcSymbSubCount[ii])
+                    append_long(sdat, seqarcSymbSubCount[ii])
                     sdat.data += bytearray(seqarcSymbSubCount[ii] * 4)
 
         for i in range(8):
             if i != SEQARC:
                 for ii in range(sdat.itemCount[i]):
                     if sdat.names[i][ii] != "":
-                        write_long((sdat.itemSymbOffset[i] + 4) + (ii * 4), len(sdat.data) - symbBlockOffset)
+                        write_long(sdat, (sdat.itemSymbOffset[i] + 4) + (ii * 4), len(sdat.data) - symbBlockOffset)
                         for x, character in enumerate(sdat.names[i][ii]):
-                            append_byte(ord(character))
-                        append_byte(0)  # terminate string
+                            append_byte(sdat, ord(character))
+                        append_byte(sdat, 0)  # terminate string
             else:
                 for ii in range(sdat.itemCount[i]):
                     if sdat.names[i][ii] != "":
-                        write_long((sdat.itemSymbOffset[i] + 4) + (ii * 8), len(sdat.data) - symbBlockOffset)
+                        write_long(sdat, (sdat.itemSymbOffset[i] + 4) + (ii * 8), len(sdat.data) - symbBlockOffset)
                         for x, character in enumerate(sdat.names[i][ii]):
-                            append_byte(ord(character))
-                        append_byte(0)  # terminate string
+                            append_byte(sdat, ord(character))
+                        append_byte(sdat, 0)  # terminate string
                         curSeqarcSub = 0
                         for subi, name in enumerate(seqarcSymbSubName):
                             if seqarcSymbSubParent[subi] == ii:
                                 if name != "":
-                                    write_long((seqarcSymbSubOffset[ii] + 4) + (curSeqarcSub * 4), len(sdat.data) - symbBlockOffset)
+                                    write_long(sdat, (seqarcSymbSubOffset[ii] + 4) + (curSeqarcSub * 4), len(sdat.data) - symbBlockOffset)
                                     for x, character in enumerate(name):
-                                        append_byte(ord(character))
-                                    append_byte(0)  # terminate string
+                                        append_byte(sdat, ord(character))
+                                    append_byte(sdat, 0)  # terminate string
                                 curSeqarcSub += 1
 
-        write_long(16, symbBlockOffset)
-        write_long(20, len(sdat.data) - symbBlockOffset)
+        write_long(sdat, 16, symbBlockOffset)
+        write_long(sdat, 20, len(sdat.data) - symbBlockOffset)
         headeri += 1
         sdat.data += bytearray((4 - (len(sdat.data) & 3)) & 3)  # pad to the nearest 0x04 byte alignment
-        write_long(symbBlockOffset + 4, len(sdat.data) - symbBlockOffset)
+        write_long(sdat, symbBlockOffset + 4, len(sdat.data) - symbBlockOffset)
 
     infoBlockOffset = len(sdat.data)  # infoBlock
     sdat.data += b'INFO'  # Header
@@ -765,38 +767,38 @@ def build(args):  # Build
 
     for i in range(8):
         sdat.itemOffset[i] = len(sdat.data)
-        write_long(infoBlockOffset + (i * 4) + 8, sdat.itemOffset[i] - infoBlockOffset)
-        append_long(sdat.itemCount[i])
+        write_long(sdat, infoBlockOffset + (i * 4) + 8, sdat.itemOffset[i] - infoBlockOffset)
+        append_long(sdat, sdat.itemCount[i])
         sdat.data += bytearray(sdat.itemCount[i] * 4)
         for ii in range(sdat.itemCount[i]):
-            write_long((sdat.itemOffset[i] + 4) + (ii * 4), len(sdat.data) - infoBlockOffset)
+            write_long(sdat, (sdat.itemOffset[i] + 4) + (ii * 4), len(sdat.data) - infoBlockOffset)
             tempSize = len(sdat.data)
-            exec(f"sdat.infoBlock.write(sdat.infoBlock.{infoBlockGroup[i]}, ii)")
+            exec(f"sdat.infoBlock.write(sdat, sdat.infoBlock.{infoBlockGroup[i]}, ii)")
             if tempSize == len(sdat.data):  # Null out the pointer for null items
-                write_long((sdat.itemOffset[i] + 4) + (ii * 4), 0)
+                write_long(sdat, (sdat.itemOffset[i] + 4) + (ii * 4), 0)
 
-    write_long(16 + (headeri * 8), infoBlockOffset)
-    write_long(20 + (headeri * 8), len(sdat.data) - infoBlockOffset)
+    write_long(sdat, 16 + (headeri * 8), infoBlockOffset)
+    write_long(sdat, 20 + (headeri * 8), len(sdat.data) - infoBlockOffset)
     headeri += 1
     sdat.data += bytearray((4 - (len(sdat.data) & 3)) & 3)  # pad to the nearest 0x04 byte alignment
-    write_long(infoBlockOffset + 4, len(sdat.data) - infoBlockOffset)
+    write_long(sdat, infoBlockOffset + 4, len(sdat.data) - infoBlockOffset)
 
     fatBlockOffset = len(sdat.data)  # fatBlock
     sdat.data += b'FAT\x20'  # Header
-    append_long((sdat.itemCount[FILE] * 16) + 12)  # fatBlock size
-    append_long(sdat.itemCount[FILE])  # number of FAT records
+    append_long(sdat, (sdat.itemCount[FILE] * 16) + 12)  # fatBlock size
+    append_long(sdat, sdat.itemCount[FILE])  # number of FAT records
     sdat.data += bytearray((sdat.itemCount[FILE] * 16))
 
-    write_long(16 + (headeri * 8), fatBlockOffset)
-    write_long(20 + (headeri * 8), len(sdat.data) - fatBlockOffset)
+    write_long(sdat, 16 + (headeri * 8), fatBlockOffset)
+    write_long(sdat, 20 + (headeri * 8), len(sdat.data) - fatBlockOffset)
     headeri += 1
     sdat.data += bytearray((4 - (len(sdat.data) & 3)) & 3)  # pad to the nearest 0x04 byte alignment
-    write_long(fatBlockOffset + 4, len(sdat.data) - fatBlockOffset)
+    write_long(sdat, fatBlockOffset + 4, len(sdat.data) - fatBlockOffset)
 
     fileBlockOffset = len(sdat.data)  # fileBlock
     sdat.data += b'FILE'  # Header
     sdat.data += bytearray(4)  # fileBlock size
-    append_long(sdat.itemCount[FILE])  # number of files
+    append_long(sdat, sdat.itemCount[FILE])  # number of files
     sdat.data += bytearray(4)  # reserved
     sdat.data += bytearray((0x20 - (len(sdat.data) & 0x1F)) & 0x1F)  # pad to the nearest 0x20 byte alignment
 
@@ -947,18 +949,18 @@ def build(args):  # Build
             if not os.path.exists(testPath):
                 raise Exception(f"Missing File:{testPath}")
         curFileLoc = (len(sdat.data) + sum(len(tf) for tf in tFileBuffer))
-        write_long((curFile * 16) + 12 + fatBlockOffset, curFileLoc)  # write file pointer to the fatBlock
+        write_long(sdat, (curFile * 16) + 12 + fatBlockOffset, curFileLoc)  # write file pointer to the fatBlock
         with open(testPath, "rb") as tempFile:
             tFileBuffer.append(bytearray(tempFile.read()))
-        write_long((curFile * 16) + 16 + fatBlockOffset, len(tFileBuffer[curFile]))  # write file size to the fatBlock
+        write_long(sdat, (curFile * 16) + 16 + fatBlockOffset, len(tFileBuffer[curFile]))  # write file size to the fatBlock
 
         while (len(tFileBuffer[curFile]) & 0xFFFFFFE0) != len(tFileBuffer[curFile]):
             tFileBuffer[curFile] += b'\x00'  # pad to the nearest 0x20 byte alignment
         curFile += 1
-    write_long(16 + (headeri * 8), fileBlockOffset)
-    write_long(20 + (headeri * 8), (len(sdat.data) + sum(len(tf) for tf in tFileBuffer)) - fileBlockOffset)
-    write_long(fileBlockOffset + 4, (len(sdat.data) + sum(len(tf) for tf in tFileBuffer)) - fileBlockOffset)  # write fileBlock size
-    write_long(8, (len(sdat.data) + sum(len(tf) for tf in tFileBuffer)))  # write file size
+    write_long(sdat, 16 + (headeri * 8), fileBlockOffset)
+    write_long(sdat, 20 + (headeri * 8), (len(sdat.data) + sum(len(tf) for tf in tFileBuffer)) - fileBlockOffset)
+    write_long(sdat, fileBlockOffset + 4, (len(sdat.data) + sum(len(tf) for tf in tFileBuffer)) - fileBlockOffset)  # write fileBlock size
+    write_long(sdat, 8, (len(sdat.data) + sum(len(tf) for tf in tFileBuffer)))  # write file size
     with open(args.SDATfile, "wb") as outfile:
         outfile.write(sdat.data)
         for i, tFile in enumerate(tFileBuffer):
