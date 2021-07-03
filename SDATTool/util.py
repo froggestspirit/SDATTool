@@ -1,3 +1,5 @@
+from const import itemExt
+
 LONG = -4
 SHORT = -2
 BYTE = -1
@@ -45,6 +47,18 @@ def read_item_name(sdat, listItem):
     if listItem == PLAYER:
         sdat.pos -= 1  # Pointers for PLAYER are 1 byte
     return retString
+
+
+def read_filename(sdat):
+    tempID = read_short(sdat)
+    matchID = 0
+    done = False
+    while matchID < len(sdat.fileNameID) and not done:
+        if sdat.fileNameID[matchID] == tempID:
+            done = True
+        else:
+            matchID += 1
+    return sdat.names[FILE][matchID] + itemExt[sdat.fileType[matchID]]
 
 
 def append_long(sdat, x):  # append a 32bit value to SDAT LSB first
