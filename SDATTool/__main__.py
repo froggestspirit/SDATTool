@@ -11,9 +11,9 @@ import json
 from shutil import copyfile
 
 from const import itemExt, itemString, infoBlockGroup, infoBlockGroupFile
+from Sseq import sseqNote
 from Sdat import SDAT, unpack_symbBlock, unpack_infoBlock, unpack_fileBlock, \
                  build_symbBlock, build_infoBlock, build_fatBlock, build_fileBlock
-from Sseq import sseqNote
 from util import read_long, read_short, append_long, append_short, append_byte, write_long
 
 LONG = -4

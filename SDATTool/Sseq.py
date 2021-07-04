@@ -1,5 +1,4 @@
 from util import read_long, read_short
-from Sdat import InfoBlock
 
 LONG = -4
 SHORT = -2
@@ -123,45 +122,6 @@ sseqCmdArgs = (  # -1 for variable length
     2,  # 0xFE
     0  # 0xFF
 )
-
-
-class SEQInfo(InfoBlock):
-    def __init__(self, sdat, name, dict=None):
-        if dict:
-            self.name = dict["name"]
-            if self.name != "":
-                self.fileName = dict["fileName"]
-                self.unkA = dict["unkA"]
-                self.bnk = dict["bnk"]
-                self.vol = dict["vol"]
-                self.cpr = dict["cpr"]
-                self.ppr = dict["ppr"]
-                self.ply = dict["ply"]
-                self.unkB = dict["unkB"]
-        else:
-            self.name = name
-            if self.name != "":
-                self.fileName = read_filename(sdat)
-                self.unkA = read_short(sdat)
-                self.bnk = read_item_name(sdat, BANK)
-                self.vol = read_byte(sdat)
-                self.cpr = read_byte(sdat)
-                self.ppr = read_byte(sdat)
-                self.ply = read_item_name(sdat, PLAYER)
-                self.unkB = [None] * 2
-                for i in range(2):
-                    self.unkB[i] = read_byte(sdat)
-    def write(self, sdat):
-        if self.name != "":
-            append_short(sdat, sdat.names[FILE].index(self.fileName))
-            append_short(sdat, self.unkA)
-            append_short(sdat, [i.name for i in sdat.infoBlock.bankInfo].index(self.bnk))
-            append_byte(sdat, self.vol)
-            append_byte(sdat, self.cpr)
-            append_byte(sdat, self.ppr)
-            append_byte(sdat, [i.name for i in sdat.infoBlock.playerInfo].index(self.ply))
-            for i in range(2):
-                append_byte(sdat, self.unkB[i])
 
 
 def unpack_sseq(sdat, tempPath):
