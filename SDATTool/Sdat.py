@@ -528,7 +528,7 @@ def unpack_fileBlock(sdat, args):
             unpack_sbnk(sdat, tempPath)
         elif fileHeader == b'SSEQ':
             unpack_sseq(sdat, tempPath)
-        if args.writeRaw:
+        if args.writeRaw or (fileHeader not in [b'SWAR', b'SBNK']):
             with open(tempPath + tempExt, "wb") as outfile:
                 outfile.write(sdat.data[sdat.pos:(sdat.pos + tempSize)])
         tempFileString = sdat.data[sdat.pos:(sdat.pos + tempSize)]
