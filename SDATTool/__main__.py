@@ -362,6 +362,7 @@ def main():
     parser.add_argument("-os", "--optimize_size", dest="optimizeSize", action="store_true", help="Build Optimized for filesize")
     parser.add_argument("-or", "--optimize_ram", dest="optimizeRAM", action="store_true", help="Build Optimized for RAM")
     parser.add_argument("-ns", "--noSymbBlock", dest="noSymbBlock", action="store_true", help="Build without a SymbBlock")
+    parser.add_argument("-wr", "--writeRaw", dest="writeRaw", action="store_true", help="Extract raw files")
     args = parser.parse_args()
 
     if args.optimizeSize or args.optimizeRAM:

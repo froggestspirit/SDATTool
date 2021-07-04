@@ -22,6 +22,8 @@ Flags:
       -os Optimize for size, same as above, but remove bank entries in the infoBlock (may break in game)
 
       -or Optimize for ram, try to minimize the size of files that need to be loaded for each song (testing, might be buggy)
+
+      -wr Write raw, extract the raw files
       
 If only a SDAT file is provided, the output directory will be the same as the SDAT, with a new folder created. This will unpack to that folder. Similarly, the SDAT can be rebuilt from the same folder name if only the SDAT filename is provided with mode -b
 
@@ -33,6 +35,12 @@ Un-edited rebuilt SDAT files should be 1:1, if an SDAT is ripped from a game, de
 
 To make better use of the -or option, first unpack a SDAT, then re-build it with -or. After, unpack that new SDAT, and rebuild that new one with -o
 
+
+New in version 1.3.0:
+
+-Code cleanup/organization
+
+-Raw files no longer extract by default. They can be extracted with the -wr flag
 
 New in version 1.2.2:
 

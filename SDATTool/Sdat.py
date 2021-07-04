@@ -1,7 +1,9 @@
 import os
 import hashlib
 from const import itemHeader, itemExt, itemString, infoBlockGroup, infoBlockGroupType
-from Sseq import sseqCmdArgs, sseqCmdName, sseqNote
+from Sseq import unpack_sseq
+from Swar import unpack_swar, build_swar
+from Sbnk import unpack_sbnk, build_sbnk
 from const import infoBlockGroup, infoBlockGroupType, itemString
 from util import read_long, read_short, read_byte, read_item_name, read_filename, \
                  append_long, append_short, append_byte, \
@@ -22,259 +24,6 @@ FILE = 8
 
 
 class SDAT:
-    class InfoBlock:
-        class SEQInfo:
-            def __init__(self, sdat, name, dict=None):
-                if dict:
-                    self.name = dict["name"]
-                    if self.name != "":
-                        self.fileName = dict["fileName"]
-                        self.unkA = dict["unkA"]
-                        self.bnk = dict["bnk"]
-                        self.vol = dict["vol"]
-                        self.cpr = dict["cpr"]
-                        self.ppr = dict["ppr"]
-                        self.ply = dict["ply"]
-                        self.unkB = dict["unkB"]
-                else:
-                    self.name = name
-                    if self.name != "":
-                        self.fileName = read_filename(sdat)
-                        self.unkA = read_short(sdat)
-                        self.bnk = read_item_name(sdat, BANK)
-                        self.vol = read_byte(sdat)
-                        self.cpr = read_byte(sdat)
-                        self.ppr = read_byte(sdat)
-                        self.ply = read_item_name(sdat, PLAYER)
-                        self.unkB = [None] * 2
-                        for i in range(2):
-                            self.unkB[i] = read_byte(sdat)
-            def write(self, sdat):
-                if self.name != "":
-                    append_short(sdat, sdat.names[FILE].index(self.fileName))
-                    append_short(sdat, self.unkA)
-                    append_short(sdat, [i.name for i in sdat.infoBlock.bankInfo].index(self.bnk))
-                    append_byte(sdat, self.vol)
-                    append_byte(sdat, self.cpr)
-                    append_byte(sdat, self.ppr)
-                    append_byte(sdat, [i.name for i in sdat.infoBlock.playerInfo].index(self.ply))
-                    for i in range(2):
-                        append_byte(sdat, self.unkB[i])
-        class SEQARCInfo:
-            def __init__(self, sdat, name, dict=None):
-                if dict:
-                    self.name = dict["name"]
-                    if self.name != "":
-                        self.fileName = dict["fileName"]
-                        self.unkA = dict["unkA"]
-                        self.zippedName = dict["zippedName"]
-                else:
-                    self.name = name
-                    if self.name != "":
-                        self.fileName = read_filename(sdat)
-                        self.unkA = read_short(sdat)
-                        self.zippedName = None
-            def write(self, sdat):
-                if self.name != "":
-                    append_short(sdat, sdat.names[FILE].index(self.fileName))
-                    append_short(sdat, self.unkA)
-        class BANKInfo:
-            def __init__(self, sdat, name, dict=None, blank=False):
-                if dict:
-                    self.name = dict["name"]
-                    if self.name != "":
-                        self.fileName = dict["fileName"]
-                        self.unkA = dict["unkA"]
-                        self.wa = dict["wa"]
-                else:
-                    self.name = name
-                    if self.name != "":
-                        self.fileName = read_filename(sdat)
-                        self.unkA = read_short(sdat)
-                        self.wa = [""] * 4
-                        for i in range(4):
-                            self.wa[i] = read_item_name(sdat, WAVARC)
-                if blank:
-                    self.name = None
-                    self.fileName = None
-                    self.unkA = None
-                    self.wa = [""] * 4
-            def write(self, sdat):
-                if self.name != "":
-                    append_short(sdat, sdat.names[FILE].index(self.fileName))
-                    append_short(sdat, self.unkA)
-                    for i in range(4):
-                        if(self.wa[i] == ""):
-                            append_short(sdat, 0xFFFF)
-                        else:
-                            append_short(sdat, [i.name for i in sdat.infoBlock.wavarcInfo].index(self.wa[i]))
-        class WAVARCInfo:
-            def __init__(self, sdat, name, dict=None, blank=False):
-                if dict:
-                    self.name = dict["name"]
-                    if self.name != "":
-                        self.fileName = dict["fileName"]
-                        self.unkA = dict["unkA"]
-                else:
-                    self.name = name
-                    if self.name != "":
-                        self.fileName = read_filename(sdat)
-                        self.unkA = read_short(sdat)
-                if blank:
-                    self.name = None
-                    self.fileName = None
-                    self.unkA = None
-            def write(self, sdat):
-                if self.name != "":
-                    append_short(sdat, sdat.names[FILE].index(self.fileName))
-                    append_short(sdat, self.unkA)
-        class PLAYERInfo:
-            def __init__(self, sdat, name, dict=None):
-                if dict:
-                    self.name = dict["name"]
-                    if self.name != "":
-                        self.unkA = dict["unkA"]
-                        self.padding = dict["padding"]
-                        self.unkB = dict["unkB"]
-                else:
-                    self.name = name
-                    if self.name != "":
-                        self.unkA = read_byte(sdat)
-                        self.padding = [None] * 3
-                        for i in range(3):
-                            self.padding[i] = read_byte(sdat)
-                        self.unkB = read_long(sdat)
-            def write(self, sdat):
-                if self.name != "":
-                    append_byte(sdat, self.unkA)
-                    for i in range(3):
-                        append_byte(sdat, self.padding[i])
-                    append_long(sdat, self.unkB)
-        class GROUPInfo:
-            def __init__(self, sdat, name, dict=None):
-                class SubGROUP:
-                    def __init__(self, sdat, dict=None):
-                        if dict:
-                            self.type = dict["type"]
-                            self.entry = dict["entry"]
-                        else:
-                            self.type = read_long(sdat)
-                            self.entry = read_long(sdat)
-                if dict:
-                    self.name = dict["name"]
-                    if self.name != "":
-                        self.count = dict["count"]
-                        self.subGroup = []
-                        for i in range(len(dict["subGroup"])):
-                            self.subGroup.append(SubGROUP(sdat, dict=dict["subGroup"][i]))
-                else:
-                    self.name = name
-                    if self.name != "":
-                        self.count = read_long(sdat)
-                        self.subGroup = [None] * self.count
-                        for i in range(self.count):
-                            self.subGroup[i] = SubGROUP(sdat)
-            def write(self, sdat):
-                if self.name != "":
-                    append_long(sdat, self.count)
-                    for i in range(self.count):
-                        append_long(sdat, self.subGroup[i].type)
-                        append_long(sdat, self.subGroup[i].entry)
-        class PLAYER2Info:
-            def __init__(self, sdat, name, dict=None):
-                if dict:
-                    self.name = dict["name"]
-                    if self.name != "":
-                        self.count = dict["count"]
-                        self.v = dict["v"]
-                        self.reserved = dict["reserved"]
-                else:
-                    self.name = name
-                    if self.name != "":
-                        self.count = read_byte(sdat)
-                        self.v = [None] * 16
-                        for i in range(16):
-                            self.v[i] = read_byte(sdat)
-                        self.reserved = [None] * 7
-                        for i in range(7):
-                            self.reserved[i] = read_byte(sdat)
-            def write(self, sdat):
-                if self.name != "":
-                    append_byte(sdat, self.count)
-                    for i in range(16):
-                        append_byte(sdat, self.v[i])
-                    for i in range(7):
-                        append_byte(sdat, self.reserved[i])
-        class STRMInfo:
-            def __init__(self, sdat, name, dict=None):
-                if dict:
-                    self.name = dict["name"]
-                    if self.name != "":
-                        self.fileName = dict["fileName"]
-                        self.unkA = dict["unkA"]
-                        self.vol = dict["vol"]
-                        self.pri = dict["pri"]
-                        self.ply = dict["ply"]
-                        self.reserved = dict["reserved"]
-                else:
-                    self.name = name
-                    if self.name != "":
-                        self.fileName = read_filename(sdat)
-                        self.unkA = read_short(sdat)
-                        self.vol = read_byte(sdat)
-                        self.pri = read_byte(sdat)
-                        self.ply = read_byte(sdat)
-                        self.reserved = [None] * 5
-                        for i in range(5):
-                            self.reserved[i] = read_byte(sdat)
-            def write(self, sdat):
-                if self.name != "":
-                    append_short(sdat, sdat.names[FILE].index(self.fileName))
-                    append_short(sdat, self.unkA)
-                    append_byte(sdat, self.vol)
-                    append_byte(sdat, self.pri)
-                    append_byte(sdat, self.ply)
-                    for i in range(5):
-                        append_byte(sdat, self.reserved[i])
-        def __init__(self):
-            for group in infoBlockGroup:
-                exec(f"self.{group} = []")
-        def load(self, sdat, infile):
-            for index, group in enumerate(infoBlockGroup):
-                exec(f"""for i in range(len(infile['{group}'])):
-                    self.{group}.append(self.{infoBlockGroupType[index]}(sdat, None, dict=infile['{group}'][i]))""")
-
-        def write(self, sdat, type, index=-1):
-            if index == -1:
-                for i in range(len(type)):
-                    type[i].write(sdat)
-            else:
-                type[index].write(sdat)
-        def replace_file(self, type, oldFile, newFile):
-            exec(f"""for item in self.{infoBlockGroup[eval(type)]}:
-                if item.name != "":
-                    if item.fileName == oldFile:
-                        item.fileName = newFile""")
-
-    class FileBlock:
-        class File:
-            def __init__(self, name, type, dict=None):
-                if dict:
-                    self.name = dict["name"]
-                    self.type = dict["type"]
-                    self.MD5 = dict["MD5"]
-                    if "subFile" in dict:
-                        self.subFile = dict["subFile"]
-                else:
-                    self.name = name
-                    self.type = type
-                    self.MD5 = None
-        def __init__(self):
-            self.file = []
-        def load(self, infile):
-            for i in range(len(infile["file"])):
-                self.file.append(self.File(None, None, dict=infile["file"][i]))
-
     def __init__(self, fileName=None, noSymbBlock=False):
         self.itemOffset = [0, 0, 0, 0, 0, 0, 0, 0, 0]
         self.itemSymbOffset = [0, 0, 0, 0, 0, 0, 0, 0, 0]
@@ -313,6 +62,224 @@ class SDAT:
             append_short(self, self.blocks)  # Blocks
             self.data += bytearray((self.blocks + 2) * 8)  # reserve space for the offsets and sizes
             self.headeri = 0  # help point back to the block offsets and sizes when ready to write
+
+
+class InfoBlock(SDAT):
+    class SEQARCInfo:
+        def __init__(self, sdat, name, dict=None):
+            if dict:
+                self.name = dict["name"]
+                if self.name != "":
+                    self.fileName = dict["fileName"]
+                    self.unkA = dict["unkA"]
+                    self.zippedName = dict["zippedName"]
+            else:
+                self.name = name
+                if self.name != "":
+                    self.fileName = read_filename(sdat)
+                    self.unkA = read_short(sdat)
+                    self.zippedName = None
+        def write(self, sdat):
+            if self.name != "":
+                append_short(sdat, sdat.names[FILE].index(self.fileName))
+                append_short(sdat, self.unkA)
+    class BANKInfo:
+        def __init__(self, sdat, name, dict=None, blank=False):
+            if dict:
+                self.name = dict["name"]
+                if self.name != "":
+                    self.fileName = dict["fileName"]
+                    self.unkA = dict["unkA"]
+                    self.wa = dict["wa"]
+            else:
+                self.name = name
+                if self.name != "":
+                    self.fileName = read_filename(sdat)
+                    self.unkA = read_short(sdat)
+                    self.wa = [""] * 4
+                    for i in range(4):
+                        self.wa[i] = read_item_name(sdat, WAVARC)
+            if blank:
+                self.name = None
+                self.fileName = None
+                self.unkA = None
+                self.wa = [""] * 4
+        def write(self, sdat):
+            if self.name != "":
+                append_short(sdat, sdat.names[FILE].index(self.fileName))
+                append_short(sdat, self.unkA)
+                for i in range(4):
+                    if(self.wa[i] == ""):
+                        append_short(sdat, 0xFFFF)
+                    else:
+                        append_short(sdat, [i.name for i in sdat.infoBlock.wavarcInfo].index(self.wa[i]))
+    class WAVARCInfo:
+        def __init__(self, sdat, name, dict=None, blank=False):
+            if dict:
+                self.name = dict["name"]
+                if self.name != "":
+                    self.fileName = dict["fileName"]
+                    self.unkA = dict["unkA"]
+            else:
+                self.name = name
+                if self.name != "":
+                    self.fileName = read_filename(sdat)
+                    self.unkA = read_short(sdat)
+            if blank:
+                self.name = None
+                self.fileName = None
+                self.unkA = None
+        def write(self, sdat):
+            if self.name != "":
+                append_short(sdat, sdat.names[FILE].index(self.fileName))
+                append_short(sdat, self.unkA)
+    class PLAYERInfo:
+        def __init__(self, sdat, name, dict=None):
+            if dict:
+                self.name = dict["name"]
+                if self.name != "":
+                    self.unkA = dict["unkA"]
+                    self.padding = dict["padding"]
+                    self.unkB = dict["unkB"]
+            else:
+                self.name = name
+                if self.name != "":
+                    self.unkA = read_byte(sdat)
+                    self.padding = [None] * 3
+                    for i in range(3):
+                        self.padding[i] = read_byte(sdat)
+                    self.unkB = read_long(sdat)
+        def write(self, sdat):
+            if self.name != "":
+                append_byte(sdat, self.unkA)
+                for i in range(3):
+                    append_byte(sdat, self.padding[i])
+                append_long(sdat, self.unkB)
+    class GROUPInfo:
+        def __init__(self, sdat, name, dict=None):
+            class SubGROUP:
+                def __init__(self, sdat, dict=None):
+                    if dict:
+                        self.type = dict["type"]
+                        self.entry = dict["entry"]
+                    else:
+                        self.type = read_long(sdat)
+                        self.entry = read_long(sdat)
+            if dict:
+                self.name = dict["name"]
+                if self.name != "":
+                    self.count = dict["count"]
+                    self.subGroup = []
+                    for i in range(len(dict["subGroup"])):
+                        self.subGroup.append(SubGROUP(sdat, dict=dict["subGroup"][i]))
+            else:
+                self.name = name
+                if self.name != "":
+                    self.count = read_long(sdat)
+                    self.subGroup = [None] * self.count
+                    for i in range(self.count):
+                        self.subGroup[i] = SubGROUP(sdat)
+        def write(self, sdat):
+            if self.name != "":
+                append_long(sdat, self.count)
+                for i in range(self.count):
+                    append_long(sdat, self.subGroup[i].type)
+                    append_long(sdat, self.subGroup[i].entry)
+    class PLAYER2Info:
+        def __init__(self, sdat, name, dict=None):
+            if dict:
+                self.name = dict["name"]
+                if self.name != "":
+                    self.count = dict["count"]
+                    self.v = dict["v"]
+                    self.reserved = dict["reserved"]
+            else:
+                self.name = name
+                if self.name != "":
+                    self.count = read_byte(sdat)
+                    self.v = [None] * 16
+                    for i in range(16):
+                        self.v[i] = read_byte(sdat)
+                    self.reserved = [None] * 7
+                    for i in range(7):
+                        self.reserved[i] = read_byte(sdat)
+        def write(self, sdat):
+            if self.name != "":
+                append_byte(sdat, self.count)
+                for i in range(16):
+                    append_byte(sdat, self.v[i])
+                for i in range(7):
+                    append_byte(sdat, self.reserved[i])
+    class STRMInfo:
+        def __init__(self, sdat, name, dict=None):
+            if dict:
+                self.name = dict["name"]
+                if self.name != "":
+                    self.fileName = dict["fileName"]
+                    self.unkA = dict["unkA"]
+                    self.vol = dict["vol"]
+                    self.pri = dict["pri"]
+                    self.ply = dict["ply"]
+                    self.reserved = dict["reserved"]
+            else:
+                self.name = name
+                if self.name != "":
+                    self.fileName = read_filename(sdat)
+                    self.unkA = read_short(sdat)
+                    self.vol = read_byte(sdat)
+                    self.pri = read_byte(sdat)
+                    self.ply = read_byte(sdat)
+                    self.reserved = [None] * 5
+                    for i in range(5):
+                        self.reserved[i] = read_byte(sdat)
+        def write(self, sdat):
+            if self.name != "":
+                append_short(sdat, sdat.names[FILE].index(self.fileName))
+                append_short(sdat, self.unkA)
+                append_byte(sdat, self.vol)
+                append_byte(sdat, self.pri)
+                append_byte(sdat, self.ply)
+                for i in range(5):
+                    append_byte(sdat, self.reserved[i])
+    def __init__(self):
+        for group in infoBlockGroup:
+            exec(f"self.{group} = []")
+    def load(self, sdat, infile):
+        for index, group in enumerate(infoBlockGroup):
+            exec(f"""for i in range(len(infile['{group}'])):
+                self.{group}.append(self.{infoBlockGroupType[index]}(sdat, None, dict=infile['{group}'][i]))""")
+
+    def write(self, sdat, type, index=-1):
+        if index == -1:
+            for i in range(len(type)):
+                type[i].write(sdat)
+        else:
+            type[index].write(sdat)
+    def replace_file(self, type, oldFile, newFile):
+        exec(f"""for item in self.{infoBlockGroup[eval(type)]}:
+            if item.name != "":
+                if item.fileName == oldFile:
+                    item.fileName = newFile""")
+
+
+class FileBlock(SDAT):
+        class File:
+            def __init__(self, name, type, dict=None):
+                if dict:
+                    self.name = dict["name"]
+                    self.type = dict["type"]
+                    self.MD5 = dict["MD5"]
+                    if "subFile" in dict:
+                        self.subFile = dict["subFile"]
+                else:
+                    self.name = name
+                    self.type = type
+                    self.MD5 = None
+        def __init__(self):
+            self.file = []
+        def load(self, infile):
+            for i in range(len(infile["file"])):
+                self.file.append(self.File(None, None, dict=infile["file"][i]))
 
 
 def unpack_symbBlock(sdat):
@@ -509,277 +476,14 @@ def unpack_fileBlock(sdat, args):
             tempName = sdat.names[FILE][fileRefID]
         sdat.fileBlock.file.append(sdat.fileBlock.File(f"{tempName}{tempExt}", tempType))
         if fileHeader == b'SWAR':
-            numSwav = read_long(sdat, pos=sdat.pos + 0x38)
-            sdat.fileBlock.file[-1].subFile = []
-            if not os.path.exists(tempPath):
-                os.makedirs(tempPath)
-            for ii in range(numSwav):
-                sdat.fileBlock.file[-1].subFile.append(f"{hex(ii).lstrip('0x').rstrip('L').zfill(2).upper()}.swav")
-                swavOffset = sdat.pos + read_long(sdat, pos=sdat.pos + (ii * 4) + 0x3C)
-                swavLength = sdat.pos + read_long(sdat, pos=sdat.pos + ((ii + 1) * 4) + 0x3C)
-                if ii + 1 == numSwav:
-                    swavLength = sdat.pos + tempSize
-                swavSize = swavLength - swavOffset
-                with open(f"{tempPath}/{hex(ii).lstrip('0x').rstrip('L').zfill(2).upper()}.swav", "wb") as outfile:
-                    outfile.write(b'SWAV')  # Header
-                    outfile.write(b'\xFF\xFE\x00\x01')  # magic
-                    outfile.write((swavSize + 0x18).to_bytes(4, byteorder='little'))
-                    outfile.write(b'\x10\x00\x01\x00')  # structure size and blocks
-                    outfile.write(b'DATA')
-                    outfile.write((swavSize + 0x08).to_bytes(4, byteorder='little'))
-                    outfile.write(sdat.data[swavOffset:swavLength])
+            unpack_swar(sdat, tempPath)
         elif fileHeader == b'SBNK':
-            numInst = read_long(sdat, pos=sdat.pos + 0x38)
-            sbnkEnd = read_long(sdat, pos=sdat.pos + 0x08) + sdat.pos
-            with open(f"{tempPath}.txt", "w") as sbnkIDFile:
-                instType = []
-                instOffset = []
-                instOrder = []
-                instUsed = []
-                lastPointer = -1  # Because some instruments will point to the same exact definition
-                furthestRead = sdat.pos + 0x3C + (numInst * 4)  # Because someone decided to leave in data that's not pointed to...
-                for ii in range(numInst):
-                    instType.append(sdat.data[sdat.pos + 0x3C + (ii * 4)])
-                    instOffset.append(read_short(sdat, pos=sdat.pos + 0x3C + (ii * 4) + 1))
-                    instOrder.append(-1)
-                    instUsed.append(False)
-                for ii in range(numInst):  # get the order the data is stored for 1:1 builds
-                    lowestPointer = 0xFFFFFFFF
-                    lowestPointerID = -1
-                    for x in range(numInst):
-                        if not instUsed[x]:
-                            if lowestPointer > instOffset[x]:
-                                lowestPointer = instOffset[x]
-                                lowestPointerID = x
-                    instOrder[ii] = lowestPointerID
-                    instUsed[lowestPointerID] = True
-                for ii in range(numInst):
-                    if instOffset[instOrder[ii]] == lastPointer and lastPointer > 0:
-                        sbnkIDFile.write(str(instOrder[ii]))
-                        sbnkIDFile.write(", SameAsAbove\n")
-                    elif instType[instOrder[ii]] == 0:
-                        sbnkIDFile.write(str(instOrder[ii]))
-                        sbnkIDFile.write(", NULL\n")
-                    elif instType[instOrder[ii]] < 16:
-                        if furthestRead < sdat.pos + instOffset[instOrder[ii]]:
-                            sbnkIDFile.write("Unused")
-                            while furthestRead < sdat.pos + instOffset[instOrder[ii]]:
-                                sbnkIDFile.write(f", {sdat.data[furthestRead]}")
-                                furthestRead += 1
-                            sbnkIDFile.write("\n")
-                        sbnkIDFile.write(str(instOrder[ii]))
-                        if instType[instOrder[ii]] == 1:
-                            sbnkIDFile.write(", Single")
-                        elif instType[instOrder[ii]] == 2:
-                            sbnkIDFile.write(", PSG1")
-                        elif instType[instOrder[ii]] == 3:
-                            sbnkIDFile.write(", PSG2")
-                        elif instType[instOrder[ii]] == 4:
-                            sbnkIDFile.write(", PSG3")
-                        else:
-                            sbnkIDFile.write(f", {instType[instOrder[ii]]}")
-                        sbnkIDFile.write(f", {read_short(sdat, pos=sdat.pos + instOffset[instOrder[ii]])}")
-                        sbnkIDFile.write(f", {read_short(sdat, pos=sdat.pos + instOffset[instOrder[ii]] + 2)}")
-                        sbnkIDFile.write(f", {sdat.data[sdat.pos + instOffset[instOrder[ii]] + 4]}")
-                        sbnkIDFile.write(f", {sdat.data[sdat.pos + instOffset[instOrder[ii]] + 5]}")
-                        sbnkIDFile.write(f", {sdat.data[sdat.pos + instOffset[instOrder[ii]] + 6]}")
-                        sbnkIDFile.write(f", {sdat.data[sdat.pos + instOffset[instOrder[ii]] + 7]}")
-                        sbnkIDFile.write(f", {sdat.data[sdat.pos + instOffset[instOrder[ii]] + 8]}")
-                        sbnkIDFile.write(f", {sdat.data[sdat.pos + instOffset[instOrder[ii]] + 9]}\n")
-                        if sdat.pos + instOffset[instOrder[ii]] + 9 > furthestRead:
-                            furthestRead = sdat.pos + instOffset[instOrder[ii]] + 10
-                    elif instType[instOrder[ii]] == 16:
-                        if furthestRead < sdat.pos + instOffset[instOrder[ii]]:
-                            sbnkIDFile.write("Unused")
-                            while furthestRead < sdat.pos + instOffset[instOrder[ii]]:
-                                sbnkIDFile.write(f", {sdat.data[furthestRead]}")
-                                furthestRead += 1
-                            sbnkIDFile.write("\n")
-                        sbnkIDFile.write(str(instOrder[ii]))
-                        lowNote = sdat.data[sdat.pos + instOffset[instOrder[ii]]]
-                        highNote = sdat.data[sdat.pos + instOffset[instOrder[ii]] + 1]
-                        sbnkIDFile.write(f", Drums, {lowNote}, {highNote}\n")
-                        x = 0
-                        while read_short(sdat, pos=sdat.pos + instOffset[instOrder[ii]] + 2 + (x * 12)) == 1 and read_short(sdat, pos=sdat.pos + instOffset[instOrder[ii]] + 6 + (x * 12)) < 4:
-                            sbnkIDFile.write(f"\t{read_short(sdat, pos=sdat.pos + instOffset[instOrder[ii]] + 2 + (x * 12))}")
-                            sbnkIDFile.write(f", {read_short(sdat, pos=sdat.pos + instOffset[instOrder[ii]] + 4 + (x * 12))}")
-                            sbnkIDFile.write(f", {read_short(sdat, pos=sdat.pos + instOffset[instOrder[ii]] + 6 + (x * 12))}")
-                            sbnkIDFile.write(f", {sdat.data[sdat.pos + instOffset[instOrder[ii]] + 8 + (x * 12)]}")
-                            sbnkIDFile.write(f", {sdat.data[sdat.pos + instOffset[instOrder[ii]] + 9 + (x * 12)]}")
-                            sbnkIDFile.write(f", {sdat.data[sdat.pos + instOffset[instOrder[ii]] + 10 + (x * 12)]}")
-                            sbnkIDFile.write(f", {sdat.data[sdat.pos + instOffset[instOrder[ii]] + 11 + (x * 12)]}")
-                            sbnkIDFile.write(f", {sdat.data[sdat.pos + instOffset[instOrder[ii]] + 12 + (x * 12)]}")
-                            sbnkIDFile.write(f", {sdat.data[sdat.pos + instOffset[instOrder[ii]] + 13 + (x * 12)]}\n")
-                            x += 1
-                        x -= 1
-                        if sdat.pos + instOffset[instOrder[ii]] + 13 + (x * 12) > furthestRead:
-                            furthestRead = sdat.pos + instOffset[instOrder[ii]] + 14 + (x * 12)
-                    elif instType[instOrder[ii]] == 17:
-                        if furthestRead < sdat.pos + instOffset[instOrder[ii]]:
-                            sbnkIDFile.write("Unused")
-                            while furthestRead < sdat.pos + instOffset[instOrder[ii]]:
-                                sbnkIDFile.write(f", {sdat.data[furthestRead]}")
-                                furthestRead += 1
-                            sbnkIDFile.write("\n")
-                        sbnkIDFile.write(str(instOrder[ii]))
-                        regions = 0
-                        sbnkIDFile.write(", Keysplit")
-                        for x in range(8):
-                            if sdat.data[sdat.pos + instOffset[instOrder[ii]] + x] > 0:
-                                regions += 1
-                            sbnkIDFile.write(f", {sdat.data[sdat.pos + instOffset[instOrder[ii]] + x]}")
-                        sbnkIDFile.write("\n")
-                        tempOffset = sdat.pos + instOffset[instOrder[ii]] + 8
-                        for x in range(regions):
-                            sbnkIDFile.write(f"\t{read_short(sdat, pos=sdat.pos + instOffset[instOrder[ii]] + 8 + (x * 12))}")
-                            sbnkIDFile.write(f", {read_short(sdat, pos=sdat.pos + instOffset[instOrder[ii]] + 10 + (x * 12))}")
-                            sbnkIDFile.write(f", {read_short(sdat, pos=sdat.pos + instOffset[instOrder[ii]] + 12 + (x * 12))}")
-                            sbnkIDFile.write(f", {sdat.data[sdat.pos + instOffset[instOrder[ii]] + 14 + (x * 12)]}")
-                            sbnkIDFile.write(f", {sdat.data[sdat.pos + instOffset[instOrder[ii]] + 15 + (x * 12)]}")
-                            sbnkIDFile.write(f", {sdat.data[sdat.pos + instOffset[instOrder[ii]] + 16 + (x * 12)]}")
-                            sbnkIDFile.write(f", {sdat.data[sdat.pos + instOffset[instOrder[ii]] + 17 + (x * 12)]}")
-                            sbnkIDFile.write(f", {sdat.data[sdat.pos + instOffset[instOrder[ii]] + 18 + (x * 12)]}")
-                            sbnkIDFile.write(f", {sdat.data[sdat.pos + instOffset[instOrder[ii]] + 19 + (x * 12)]}\n")
-                            if sdat.pos + instOffset[instOrder[ii]] + 19 + (x * 12) > furthestRead:
-                                furthestRead = sdat.pos + instOffset[instOrder[ii]] + 20 + (x * 12)
-                    lastPointer = instOffset[instOrder[ii]]
-                if furthestRead < sbnkEnd:
-                    sbnkIDFile.write("Unused")
-                    while furthestRead < sbnkEnd:
-                        sbnkIDFile.write(f", {sdat.data[furthestRead]}")
-                        furthestRead += 1
-                    sbnkIDFile.write("\n")
+            unpack_sbnk(sdat, tempPath)
         elif fileHeader == b'SSEQ':
-            sseqSize = read_long(sdat, pos=sdat.pos + 0x14)
-            sseqEnd = sdat.pos + 16 + sseqSize
-            sdat.pos += 0x1C
-            sseqStart = sdat.pos
-
-            # Run through first to calculate labels
-            trackOffset = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-            trackLabel = []
-            trackLabelName = []
-            command = sdat.data[sdat.pos]
-            if command == 0xFE:
-                usedTracks = read_short(sdat, pos=sdat.pos + 1)
-                sdat.pos += 3
-                numTracks = 0
-                curTrack = 1
-                while curTrack < 16:
-                    if usedTracks & curTrack:
-                        numTracks += 1
-                    curTrack <<= 1
-            else:
-                sdat.pos = sseqEnd
-
-            trackOffset[0] = sdat.pos  # Workaround to place the first track header
-            while sdat.pos < sseqEnd:
-                command = sdat.data[sdat.pos]
-                sdat.pos += 1  # temporary
-                if command == 0x93:  # Track Pointer
-                    trackInfo = read_long(sdat, pos=sdat.pos)
-                    trackOffset[trackInfo & 0xFF] = (trackInfo >> 8) + sseqStart
-                    sdat.pos += 4
-                elif (command == 0x94) or (command == 0x95):  # Jump or Call
-                    commandArgLen = sseqCmdArgs[command - 0x80]
-                    commandArg = (read_long(sdat, pos=sdat.pos) & 0xFFFFFF) + sseqStart
-                    if commandArg not in trackLabel:
-                        trackLabel.append(commandArg)
-                        if commandArg not in trackOffset:
-                            trackLabelName.append(f"Label_0x{hex(commandArg).lstrip('0x').rstrip('L').zfill(2).upper()}")
-                        else:
-                            trackLabelName.append(f"Track_{trackOffset.index(commandArg) + 1}")
-                    sdat.pos += commandArgLen
-                elif command >= 0x80:
-                    commandArgLen = sseqCmdArgs[command - 0x80]
-                    if commandArgLen == -1:
-                        for i in range(3):
-                            if sdat.data[sdat.pos] > 0x7F:
-                                sdat.pos += 1
-                        sdat.pos += 1
-                    else:
-                        sdat.pos += commandArgLen
-                else:
-                    sdat.pos += 1
-                    for i in range(3):
-                        if sdat.data[sdat.pos] > 0x7F:
-                            sdat.pos += 1
-                    sdat.pos += 1
-
-            # Re-run through the song now that the labels are defined
-            sdat.pos = sseqStart
-            with open(f"{tempPath}.txt", "w") as sseqFile:
-                command = sdat.data[sdat.pos]
-                if command == 0xFE:
-                    usedTracks = read_short(sdat, pos=sdat.pos + 1)
-                    sdat.pos += 3
-                    numTracks = 0
-                    curTrack = 1
-                    while curTrack < 16:
-                        if usedTracks & curTrack:
-                            numTracks += 1
-                        curTrack <<= 1
-                else:
-                    sdat.pos = sseqEnd
-
-                curTrack = 0
-                trackOffset[0] = sdat.pos  # Workaround to place the first track header
-                while sdat.pos < sseqEnd:
-                    if sdat.pos in trackOffset:
-                        sseqFile.write(f"Track_{trackOffset.index(sdat.pos) + 1}:\n")
-                    elif sdat.pos in trackLabel:
-                        sseqFile.write(f"{trackLabelName[trackLabel.index(sdat.pos)]}:\n")
-                    command = sdat.data[sdat.pos]
-                    sdat.pos += 1  # temporary
-                    if command == 0x93:  # Track Pointer
-                        trackInfo = read_long(sdat, pos=sdat.pos)
-                        trackOffset[trackInfo & 0xFF] = (trackInfo >> 8) + sseqStart
-                        sdat.pos += 4
-                    elif command >= 0x80:
-                        commandName = sseqCmdName[command - 0x80]
-                        if commandName == "":
-                            commandName = f"Unknown_0x{hex(command).lstrip('0x').rstrip('L').zfill(2).upper()}"
-                        commandArgLen = sseqCmdArgs[command - 0x80]
-                        if commandArgLen == -1:
-                            commandArgLen = 1
-                            commandArg = (sdat.data[sdat.pos] & 0x7F)
-                            for i in range(3):
-                                if sdat.data[sdat.pos] > 0x7F:
-                                    commandArg <<= 7
-                                    commandArg += (sdat.data[sdat.pos] & 0x7F)
-                                    sdat.pos += 1
-                                    commandArgLen += 1
-                            sdat.pos += 1
-                        else:
-                            commandArgMask = 0
-                            for i in range(commandArgLen):
-                                commandArgMask <<= 8
-                                commandArgMask += 0xFF
-                            commandArg = (read_long(sdat, pos=sdat.pos) & commandArgMask)
-                            sdat.pos += commandArgLen
-                        if commandArgLen != 0:
-                            if (command == 0x94) or (command == 0x95):  # Jump or Call
-                                sseqFile.write(f"\t{commandName} {trackLabelName[trackLabel.index(commandArg + sseqStart)]}\n")
-                            else:
-                                sseqFile.write(f"\t{commandName} {commandArg}\n")
-                        else:
-                            sseqFile.write(f"\t{commandName}\n")
-                    else:
-                        velocity = sdat.data[sdat.pos]
-                        sdat.pos += 1
-                        commandArg = (sdat.data[sdat.pos] & 0x7F)
-                        commandArgLen = 1
-                        for i in range(3):
-                            if sdat.data[sdat.pos] > 0x7F:
-                                commandArg <<= 7
-                                commandArg += (sdat.data[sdat.pos] & 0x7F)
-                                sdat.pos += 1
-                                commandArgLen += 1
-                        sdat.pos += 1
-                        sseqFile.write(f"\t{sseqNote[command % 12]}{int(command / 12)},{velocity},{commandArg}\n")
-            sdat.pos = sseqStart - 0x1C
-        with open(tempPath + tempExt, "wb") as outfile:
-            outfile.write(sdat.data[sdat.pos:(sdat.pos + tempSize)])
+            unpack_sseq(sdat, tempPath)
+        if args.writeRaw:
+            with open(tempPath + tempExt, "wb") as outfile:
+                outfile.write(sdat.data[sdat.pos:(sdat.pos + tempSize)])
         tempFileString = sdat.data[sdat.pos:(sdat.pos + tempSize)]
         thisMD5 = hashlib.md5(tempFileString)
         sdat.fileBlock.file[-1].MD5 = f"{thisMD5.hexdigest()}"
@@ -793,140 +497,11 @@ def build_fileBlock(sdat, args):
     sdat.data += bytearray(4)  # reserved
     sdat.data += bytearray((0x20 - (len(sdat.data) & 0x1F)) & 0x1F)  # pad to the nearest 0x20 byte alignment
 
-    for i, fName in enumerate(sdat.names[FILE]):  # Check for BANK source files
+    for i, fName in enumerate(sdat.names[FILE]):  # Check for source files
         testPath = f"{args.folder}/Files/{itemString[itemExt.index(fName[-5:])]}/{fName}"
         if not os.path.exists(testPath):
             if fName[-5:] == ".sbnk":  # can the sbnk be built?
-                testPath = f"{args.folder}/Files/{itemString[BANK]}/{fName[:-5]}.txt"
-                if not os.path.exists(testPath):
-                    raise Exception(f"Missing File:{testPath}")
-                with open(testPath, "r") as sbnkIDFile:
-                    done = False
-                    sbnkLines = []
-                    numInst = 0
-                    while not done:
-                        thisLine = sbnkIDFile.readline()
-                        if not thisLine:
-                            done = True
-                        thisLine = thisLine.split(";")[0]  # ignore anything commented out
-                        thisLine = thisLine.split("\n")[0]  # remove newline
-                        if thisLine != "":
-                            sbnkLines.append(thisLine)
-                            if thisLine.find("\t") == -1 and thisLine.find("Unused") == -1:  # Don't count unused or sub definitions
-                                numInst += 1
-                sbnkHeader = []
-                sbnkHeaderSize = 0x3C
-                sbnkData = []
-                prevPointer = b'\x00\x00\x00\x00'
-                sbnkHeader.append(b'SBNK')  # Header
-                sbnkHeader.append(b'\xFF\xFE\x00\x01')  # magic
-                sbnkHeader.append(b'\x00\x00\x00\x00')  # Reserve for sbnk size
-                sbnkHeader.append(b'\x10\x00\x01\x00')  # structure size and blocks
-                sbnkHeader.append(b'DATA')
-                sbnkHeader.append(b'\x00\x00\x00\x00')  # Reserve for struct size
-                sbnkHeader.append(b'\x00' * 32)  # reserved
-                sbnkHeader.append((numInst).to_bytes(4, byteorder='little'))  # Number of instruments
-                for ii in range(numInst):
-                    sbnkHeader.append(b'\x00\x00\x00\x00')  # Reserve for pointers
-                for ii, inst in enumerate(sbnkLines):
-                    thisLine = inst
-                    if thisLine.find("\t") == -1:
-                        thisLine = thisLine.split(", ")
-                        if thisLine[1] == "SameAsAbove":
-                            sbnkHeader[8 + int(thisLine[0])] = prevPointer
-                        elif thisLine[1] != "0" and thisLine[1] != "NULL":
-                            if thisLine[1] == "Single":
-                                thisLine[1] = "1"
-                            elif thisLine[1] == "PSG1":
-                                thisLine[1] = "2"
-                            elif thisLine[1] == "PSG2":
-                                thisLine[1] = "3"
-                            elif thisLine[1] == "PSG3":
-                                thisLine[1] = "4"
-                            elif thisLine[1] == "Drums":
-                                thisLine[1] = "16"
-                            elif thisLine[1] == "Keysplit":
-                                thisLine[1] = "17"
-                            sbnkHeaderSize = (numInst * 4) + 0x3C
-                            if thisLine[0] == "Unused":
-                                for x, unusedData in enumerate(thisLine[1:]):
-                                    sbnkData.append((int(unusedData)).to_bytes(1, byteorder='little'))
-                            else:
-                                prevPointer = (int(thisLine[1]) + ((sbnkHeaderSize + sum(len(tf) for tf in sbnkData)) << 8)).to_bytes(4, byteorder='little')
-                                sbnkHeader[8 + int(thisLine[0])] = prevPointer
-                            if int(thisLine[1]) < 16:
-                                sbnkData.append((int(thisLine[2])).to_bytes(2, byteorder='little'))
-                                sbnkData.append((int(thisLine[3])).to_bytes(2, byteorder='little'))
-                                sbnkData.append((int(thisLine[4])).to_bytes(1, byteorder='little'))
-                                sbnkData.append((int(thisLine[5])).to_bytes(1, byteorder='little'))
-                                sbnkData.append((int(thisLine[6])).to_bytes(1, byteorder='little'))
-                                sbnkData.append((int(thisLine[7])).to_bytes(1, byteorder='little'))
-                                sbnkData.append((int(thisLine[8])).to_bytes(1, byteorder='little'))
-                                sbnkData.append((int(thisLine[9])).to_bytes(1, byteorder='little'))
-                            elif int(thisLine[1]) == 16:
-                                sbnkData.append((int(thisLine[2])).to_bytes(1, byteorder='little'))
-                                sbnkData.append((int(thisLine[3])).to_bytes(1, byteorder='little'))
-                            elif int(thisLine[1]) == 17:
-                                sbnkData.append((int(thisLine[2])).to_bytes(1, byteorder='little'))
-                                sbnkData.append((int(thisLine[3])).to_bytes(1, byteorder='little'))
-                                sbnkData.append((int(thisLine[4])).to_bytes(1, byteorder='little'))
-                                sbnkData.append((int(thisLine[5])).to_bytes(1, byteorder='little'))
-                                sbnkData.append((int(thisLine[6])).to_bytes(1, byteorder='little'))
-                                sbnkData.append((int(thisLine[7])).to_bytes(1, byteorder='little'))
-                                sbnkData.append((int(thisLine[8])).to_bytes(1, byteorder='little'))
-                                sbnkData.append((int(thisLine[9])).to_bytes(1, byteorder='little'))
-                    else:
-                        thisLine = thisLine.split("\t")
-                        thisLine = thisLine[1]
-                        thisLine = thisLine.split(", ")
-                        sbnkData.append((int(thisLine[0])).to_bytes(2, byteorder='little'))
-                        sbnkData.append((int(thisLine[1])).to_bytes(2, byteorder='little'))
-                        sbnkData.append((int(thisLine[2])).to_bytes(2, byteorder='little'))
-                        sbnkData.append((int(thisLine[3])).to_bytes(1, byteorder='little'))
-                        sbnkData.append((int(thisLine[4])).to_bytes(1, byteorder='little'))
-                        sbnkData.append((int(thisLine[5])).to_bytes(1, byteorder='little'))
-                        sbnkData.append((int(thisLine[6])).to_bytes(1, byteorder='little'))
-                        sbnkData.append((int(thisLine[7])).to_bytes(1, byteorder='little'))
-                        sbnkData.append((int(thisLine[8])).to_bytes(1, byteorder='little'))
-                sbnkSize = sum(len(tf) for tf in sbnkData) + sbnkHeaderSize
-                while (sbnkSize & 0xFFFFFFFC) != sbnkSize:
-                    sbnkData.append(b'\x00')  # pad to the nearest 0x4 byte alignment
-                    sbnkSize += 1
-                sbnkHeader[2] = (sbnkSize).to_bytes(4, byteorder='little')
-                sbnkHeader[5] = (sbnkSize - 0x10).to_bytes(4, byteorder='little')
-                testPath = f"{args.folder}/Files/{itemString[BANK]}/{fName}"
-                with open(testPath, "wb") as sbnkFile:
-                    for ii, listItem in enumerate(sbnkHeader):
-                        sbnkFile.write(listItem)
-                    for ii, listItem in enumerate(sbnkData):
-                        sbnkFile.write(listItem)
-
-    for i, fName in enumerate(sdat.names[FILE]):  # Check for WAVEARC source files
-        testPath = f"{args.folder}/Files/{itemString[itemExt.index(fName[-5:])]}/{fName}"
-        if not os.path.exists(testPath):
-            if fName[-5:] == ".swar":  # can the swar be built?
+                build_sbnk(sdat, args, fName)
+            elif fName[-5:] == ".swar":  # can the swar be built?
                 swavName = sdat.fileBlock.file[i].subFile
-                swarTemp = []
-                for ii, sName in enumerate(swavName):
-                    testPath = f"{args.folder}/Files/{itemString[WAVARC]}/{fName[:-5]}/{sName}"
-                    if not os.path.exists(testPath):
-                        raise Exception(f"Missing File:{testPath}")
-                    with open(testPath, "rb") as tempFile:
-                        swarTemp.append(bytearray(tempFile.read()))
-                testPath = f"{args.folder}/Files/{itemString[WAVARC]}/{fName}"
-                with open(testPath, "wb") as swarFile:
-                    swarSize = sum(len(sf[0x18:]) for sf in swarTemp)
-                    swarFile.write(b'SWAR')  # Header
-                    swarFile.write(b'\xFF\xFE\x00\x01')  # magic
-                    swarFile.write((swarSize + 0x3C + (len(swarTemp) * 4)).to_bytes(4, byteorder='little'))
-                    swarFile.write(b'\x10\x00\x01\x00')  # structure size and blocks
-                    swarFile.write(b'DATA')
-                    swarFile.write((swarSize + 0x2C + (len(swarTemp) * 4)).to_bytes(4, byteorder='little'))
-                    swarFile.write(b'\x00' * 32)  # reserved
-                    swarFile.write((len(swarTemp)).to_bytes(4, byteorder='little'))
-                    swarPointer = 0x3C + (len(swarTemp) * 4)  # where the first swav will be in the file
-                    for ii, sFile in enumerate(swarTemp):
-                        swarFile.write((swarPointer).to_bytes(4, byteorder='little'))
-                        swarPointer += len(sFile[0x18:])
-                    for ii, sFile in enumerate(swarTemp):
-                        swarFile.write(sFile[0x18:])
+                build_swar(sdat, args, fName, swavName)
