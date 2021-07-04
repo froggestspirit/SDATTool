@@ -24,45 +24,6 @@ FILE = 8
 
 
 class SDAT:
-    def __init__(self, fileName=None, noSymbBlock=False):
-        self.itemOffset = [0, 0, 0, 0, 0, 0, 0, 0, 0]
-        self.itemSymbOffset = [0, 0, 0, 0, 0, 0, 0, 0, 0]
-        self.itemCount = [0, 0, 0, 0, 0, 0, 0, 0, 0]
-        self.names = [[], [], [], [], [], [], [], [], []]
-        self.fileType = []
-        self.fileNameID = []
-
-        if fileName:
-            with open(fileName, "rb") as infile:
-                self.data = bytearray(infile.read())
-            self.fileSize = len(self.data)
-            self.pos = 8
-            self.SDATSize = read_long(self)
-            self.headerSize = read_short(self)
-            self.blocks = read_short(self)
-            if self.blocks == 4:
-                self.symbOffset = read_long(self)
-                self.symbSize = read_long(self)
-            self.infoOffset = read_long(self)
-            self.infoSize = read_long(self)
-            self.fatOffset = read_long(self)
-            self.fatSize = read_long(self)
-            self.fileOffset = read_long(self)
-            self.fileSize = read_long(self)
-        else:
-            self.data = bytearray()
-            self.pos = 0
-            self.blocks = 4
-            if noSymbBlock:
-                self.blocks = 3
-            self.data = bytearray(b'SDAT')  # Header
-            self.data += b'\xFF\xFE\x00\x01'  # Magic
-            self.data += bytearray(4)  # File size
-            append_short(self, (self.blocks + 4) * 8)  # Header size
-            append_short(self, self.blocks)  # Blocks
-            self.data += bytearray((self.blocks + 2) * 8)  # reserve space for the offsets and sizes
-            self.headeri = 0  # help point back to the block offsets and sizes when ready to write
-
     class InfoBlock():
         class SEQInfo():
             def __init__(self, sdat, name, dict=None):
@@ -101,6 +62,7 @@ class SDAT:
                     append_byte(sdat, [i.name for i in sdat.infoBlock.playerInfo].index(self.ply))
                     for i in range(2):
                         append_byte(sdat, self.unkB[i])
+
         class SEQARCInfo:
             def __init__(self, sdat, name, dict=None):
                 if dict:
@@ -119,6 +81,7 @@ class SDAT:
                 if self.name != "":
                     append_short(sdat, sdat.names[FILE].index(self.fileName))
                     append_short(sdat, self.unkA)
+
         class BANKInfo:
             def __init__(self, sdat, name, dict=None, blank=False):
                 if dict:
@@ -149,6 +112,7 @@ class SDAT:
                             append_short(sdat, 0xFFFF)
                         else:
                             append_short(sdat, [i.name for i in sdat.infoBlock.wavarcInfo].index(self.wa[i]))
+
         class WAVARCInfo:
             def __init__(self, sdat, name, dict=None, blank=False):
                 if dict:
@@ -169,6 +133,7 @@ class SDAT:
                 if self.name != "":
                     append_short(sdat, sdat.names[FILE].index(self.fileName))
                     append_short(sdat, self.unkA)
+
         class PLAYERInfo:
             def __init__(self, sdat, name, dict=None):
                 if dict:
@@ -191,6 +156,7 @@ class SDAT:
                     for i in range(3):
                         append_byte(sdat, self.padding[i])
                     append_long(sdat, self.unkB)
+
         class GROUPInfo:
             def __init__(self, sdat, name, dict=None):
                 class SubGROUP:
@@ -221,6 +187,7 @@ class SDAT:
                     for i in range(self.count):
                         append_long(sdat, self.subGroup[i].type)
                         append_long(sdat, self.subGroup[i].entry)
+
         class PLAYER2Info:
             def __init__(self, sdat, name, dict=None):
                 if dict:
@@ -246,6 +213,7 @@ class SDAT:
                         append_byte(sdat, self.v[i])
                     for i in range(7):
                         append_byte(sdat, self.reserved[i])
+
         class STRMInfo:
             def __init__(self, sdat, name, dict=None):
                 if dict:
@@ -277,9 +245,11 @@ class SDAT:
                     append_byte(sdat, self.ply)
                     for i in range(5):
                         append_byte(sdat, self.reserved[i])
+
         def __init__(self):
             for group in infoBlockGroup:
                 exec(f"self.{group} = []")
+
         def load(self, sdat, infile):
             for index, group in enumerate(infoBlockGroup):
                 exec(f"""for i in range(len(infile['{group}'])):
@@ -291,6 +261,7 @@ class SDAT:
                     type[i].write(sdat)
             else:
                 type[index].write(sdat)
+
         def replace_file(self, type, oldFile, newFile):
             exec(f"""for item in self.{infoBlockGroup[eval(type)]}:
                 if item.name != "":
@@ -298,23 +269,64 @@ class SDAT:
                         item.fileName = newFile""")
 
     class FileBlock():
-            class File:
-                def __init__(self, name, type, dict=None):
-                    if dict:
-                        self.name = dict["name"]
-                        self.type = dict["type"]
-                        self.MD5 = dict["MD5"]
-                        if "subFile" in dict:
-                            self.subFile = dict["subFile"]
-                    else:
-                        self.name = name
-                        self.type = type
-                        self.MD5 = None
-            def __init__(self):
-                self.file = []
-            def load(self, infile):
-                for i in range(len(infile["file"])):
-                    self.file.append(self.File(None, None, dict=infile["file"][i]))
+        class File:
+            def __init__(self, name, type, dict=None):
+                if dict:
+                    self.name = dict["name"]
+                    self.type = dict["type"]
+                    self.MD5 = dict["MD5"]
+                    if "subFile" in dict:
+                        self.subFile = dict["subFile"]
+                else:
+                    self.name = name
+                    self.type = type
+                    self.MD5 = None
+
+        def __init__(self):
+            self.file = []
+
+        def load(self, infile):
+            for i in range(len(infile["file"])):
+                self.file.append(self.File(None, None, dict=infile["file"][i]))
+
+    def __init__(self, fileName=None, noSymbBlock=False):
+        self.itemOffset = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+        self.itemSymbOffset = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+        self.itemCount = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+        self.names = [[], [], [], [], [], [], [], [], []]
+        self.fileType = []
+        self.fileNameID = []
+
+        if fileName:
+            with open(fileName, "rb") as infile:
+                self.data = bytearray(infile.read())
+            self.fileSize = len(self.data)
+            self.pos = 8
+            self.SDATSize = read_long(self)
+            self.headerSize = read_short(self)
+            self.blocks = read_short(self)
+            if self.blocks == 4:
+                self.symbOffset = read_long(self)
+                self.symbSize = read_long(self)
+            self.infoOffset = read_long(self)
+            self.infoSize = read_long(self)
+            self.fatOffset = read_long(self)
+            self.fatSize = read_long(self)
+            self.fileOffset = read_long(self)
+            self.fileSize = read_long(self)
+        else:
+            self.data = bytearray()
+            self.pos = 0
+            self.blocks = 4
+            if noSymbBlock:
+                self.blocks = 3
+            self.data = bytearray(b'SDAT')  # Header
+            self.data += b'\xFF\xFE\x00\x01'  # Magic
+            self.data += bytearray(4)  # File size
+            append_short(self, (self.blocks + 4) * 8)  # Header size
+            append_short(self, self.blocks)  # Blocks
+            self.data += bytearray((self.blocks + 2) * 8)  # reserve space for the offsets and sizes
+            self.headeri = 0  # help point back to the block offsets and sizes when ready to write
 
 
 def unpack_symbBlock(sdat):
