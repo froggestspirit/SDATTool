@@ -1,6 +1,5 @@
 import os
 from const import itemString
-from const import itemString
 from util import read_long, read_short
 
 LONG = -4

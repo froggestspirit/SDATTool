@@ -1,3 +1,5 @@
+import os
+from const import itemString
 from util import read_long, read_short
 
 LONG = -4
@@ -71,9 +73,9 @@ sseqCmdName = (
     "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "",
     "", "", "", "", "", "", "", "",
     "LoopEnd",  # 0xFC
-    "Return\n",  # 0xFD
+    "Return",  # 0xFD
     "TracksUsed",  # 0xFE
-    "TrackEnd\n"  # 0xFF
+    "TrackEnd"  # 0xFF
 )
 
 sseqCmdArgs = (  # -1 for variable length
@@ -124,6 +126,15 @@ sseqCmdArgs = (  # -1 for variable length
 )
 
 
+class SSEQCommand:
+    def __init__(self, channel, location, position, command, argument):
+        self.channel = channel
+        self.position = location
+        self.position = position
+        self.command = command
+        self.argument = argument
+
+
 def unpack_sseq(sdat, tempPath):
     sseqSize = read_long(sdat, pos=sdat.pos + 0x14)
     sseqEnd = sdat.pos + 16 + sseqSize
@@ -131,7 +142,7 @@ def unpack_sseq(sdat, tempPath):
     sseqStart = sdat.pos
 
     # Run through first to calculate labels
-    trackOffset = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    trackOffset = [0] * 16
     trackLabel = []
     trackLabelName = []
     command = sdat.data[sdat.pos]
@@ -212,6 +223,8 @@ def unpack_sseq(sdat, tempPath):
                 sdat.pos += 4
             elif command >= 0x80:
                 commandName = sseqCmdName[command - 0x80]
+                if commandName in ("Return", "TrackEnd"):
+                    commandName = f"{commandName}\n"
                 if commandName == "":
                     commandName = f"Unknown_0x{hex(command).lstrip('0x').rstrip('L').zfill(2).upper()}"
                 commandArgLen = sseqCmdArgs[command - 0x80]
@@ -253,3 +266,65 @@ def unpack_sseq(sdat, tempPath):
                 sdat.pos += 1
                 sseqFile.write(f"\t{sseqNote[command % 12]}{int(command / 12)},{velocity},{commandArg}\n")
     sdat.pos = sseqStart - 0x1C
+
+
+def build_sseq(sdat, args, fName):  # unfinished, in progress
+    testPath = f"{args.folder}/Files/{itemString[SEQ]}/{fName[:-5]}.txt"
+    if not os.path.exists(testPath):
+        raise Exception(f"Missing File:{testPath}")
+    with open(testPath, "r") as sseqFile:
+        done = False
+        commands = []
+        labelName = []
+        labelPosition = []
+        channel = -1
+        position = 0  # position in reference to the number of bytes
+        location = 0  # location of commands in reference to the song and channels
+        while not done:
+            thisLine = sseqFile.readline()
+            if not thisLine:
+                done = True
+            thisLine = thisLine.split(";")[0]  # ignore anything commented out
+            thisLine = thisLine.split("\n")[0]  # remove newline
+            if thisLine != "":
+                if thisLine.find("\t") == -1:  # label
+                    thisLine = thisLine.replace(":", "")
+                    if thisLine.split("_")[0] == "Track":
+                        channel = int(thisLine.split("_")[1])
+                        location = 0
+                        if thisLine in labelName:
+                            raise ValueError(f"Label {thisLine} is defined more than once")
+                    labelName.append(thisLine)
+                    labelPosition.append(position)
+                else:  # not a label
+                    thisLine = thisLine.replace("\t", "").split(" ")
+                    command = thisLine[0]
+                    if command in sseqCmdName:
+                        if len(thisLine) > 1:
+                            commands.append(SSEQCommand(channel, location, position, command, thisLine[1].split(",")))
+                        else:
+                            commands.append(SSEQCommand(channel, location, position, command, None))
+                        if command == "Delay":
+                            location += int(thisLine[1])
+                        commandSize = sseqCmdArgs[sseqCmdName.index(command)]
+                        if commandSize == -1:
+                            delay = int(thisLine[1])
+                            commandSize = 1
+                            delay >>= 7
+                            for i in range(3):
+                                if delay:
+                                    delay >>= 7
+                                    commandSize += 1
+                        position += commandSize + 1
+                    elif command.split(",")[0][:2] in sseqNote:  # Check if it's a note
+                        args = command.split(",")
+                        note = sseqNote.index(args[0][:2]) + (int(args[0][2:]) * 12)
+                        commands.append(SSEQCommand(channel, location, position, "Note", [note, args[1], args[2]]))
+                    else:
+                        raise ValueError(f"Undefined Command {command}")
+    for cmd in commands:  # fix label pointers
+        if cmd.command in ("Jump", "Call"):
+            if cmd.argument[0] in labelName:
+                cmd.argument[0] = labelPosition[labelName.index(cmd.argument[0])]
+            else:
+                raise ValueError(f"Label \"{cmd.argument[0]}\" is not defined")

@@ -1,7 +1,7 @@
 import os
 import hashlib
 from const import itemHeader, itemExt, itemString, infoBlockGroup, infoBlockGroupType
-from Sseq import unpack_sseq
+from Sseq import unpack_sseq, build_sseq
 from Swar import unpack_swar, build_swar
 from Sbnk import unpack_sbnk, build_sbnk
 from const import infoBlockGroup, infoBlockGroupType, itemString
@@ -552,3 +552,5 @@ def build_fileBlock(sdat, args):
             elif fName[-5:] == ".swar":  # can the swar be built?
                 swavName = sdat.fileBlock.file[i].subFile
                 build_swar(sdat, args, fName, swavName)
+            elif fName[-5:] == ".sseq":  # can the sseq be built?
+                build_sseq(sdat, args, fName)
