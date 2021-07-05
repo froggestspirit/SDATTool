@@ -12,9 +12,9 @@ from shutil import copyfile
 
 from const import itemExt, itemString, infoBlockGroup, infoBlockGroupFile
 from Sseq import sseqNote
-from Sdat import SDAT, unpack_symbBlock, unpack_infoBlock, unpack_fileBlock, \
+from Sdat import SDAT, InfoBlock, FileBlock, unpack_symbBlock, unpack_infoBlock, unpack_fileBlock, \
                  build_symbBlock, build_infoBlock, build_fatBlock, build_fileBlock
-from util import read_long, read_short, append_long, append_short, append_byte, write_long
+from util import write_long
 
 LONG = -4
 SHORT = -2
@@ -73,12 +73,12 @@ def build(args):  # Build
     print("Building...")
     sdat = SDAT(noSymbBlock=args.noSymbBlock)
 
-    with open(f"{args.folder}/FileBlock.json", "r") as infile:
-        sdat.fileBlock = sdat.FileBlock()
-        sdat.fileBlock.load(json.load(infile))
     with open(f"{args.folder}/InfoBlock.json", "r") as infile:
-        sdat.infoBlock = sdat.InfoBlock()
+        sdat.infoBlock = InfoBlock()
         sdat.infoBlock.load(sdat, json.load(infile))
+    with open(f"{args.folder}/FileBlock.json", "r") as infile:
+        sdat.fileBlock = FileBlock()
+        sdat.fileBlock.load(json.load(infile))
 
     if args.optimizeRAM:
         for i, item in enumerate(sdat.infoBlock.seqInfo):  # Check for SSEQ source files
