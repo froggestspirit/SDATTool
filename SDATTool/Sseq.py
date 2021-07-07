@@ -358,4 +358,5 @@ def build_sseq(sdat, args, fName):  # unfinished, in progress
         for cmd in commands:
             sseqFile.write(cmd.binary)
             print(f"{cmd.command}: {cmd.binary}")
+    #pad to nearest word
     
