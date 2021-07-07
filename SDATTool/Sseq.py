@@ -133,6 +133,7 @@ class SSEQCommand:
         self.position = position
         self.command = command
         self.argument = argument
+        self.binary = bytearray()
 
 
 def unpack_sseq(sdat, tempPath):
@@ -264,7 +265,8 @@ def unpack_sseq(sdat, tempPath):
                         sdat.pos += 1
                         commandArgLen += 1
                 sdat.pos += 1
-                sseqFile.write(f"\t{sseqNote[command % 12]}{int(command / 12)},{velocity},{commandArg}\n")
+                if sdat.pos <= sseqEnd:
+                    sseqFile.write(f"\t{sseqNote[command % 12]}{int(command / 12)},{velocity},{commandArg}\n")
     sdat.pos = sseqStart - 0x1C
 
 
@@ -275,6 +277,7 @@ def build_sseq(sdat, args, fName):  # unfinished, in progress
     with open(testPath, "r") as sseqFile:
         done = False
         commands = []
+        trackOffset = [0] * 16
         labelName = []
         labelPosition = []
         channel = -1
@@ -291,6 +294,7 @@ def build_sseq(sdat, args, fName):  # unfinished, in progress
                     thisLine = thisLine.replace(":", "")
                     if thisLine.split("_")[0] == "Track":
                         channel = int(thisLine.split("_")[1])
+                        trackOffset[channel] = position
                         location = 0
                         if thisLine in labelName:
                             raise ValueError(f"Label {thisLine} is defined more than once")
@@ -301,7 +305,7 @@ def build_sseq(sdat, args, fName):  # unfinished, in progress
                     command = thisLine[0]
                     if command in sseqCmdName:
                         if len(thisLine) > 1:
-                            commands.append(SSEQCommand(channel, location, position, command, thisLine[1].split(",")))
+                            commands.append(SSEQCommand(channel, location, position, command, thisLine[1]))
                         else:
                             commands.append(SSEQCommand(channel, location, position, command, None))
                         if command == "Delay":
@@ -317,14 +321,41 @@ def build_sseq(sdat, args, fName):  # unfinished, in progress
                                     commandSize += 1
                         position += commandSize + 1
                     elif command.split(",")[0][:2] in sseqNote:  # Check if it's a note
-                        args = command.split(",")
-                        note = sseqNote.index(args[0][:2]) + (int(args[0][2:]) * 12)
-                        commands.append(SSEQCommand(channel, location, position, "Note", [note, args[1], args[2]]))
+                        param = command.split(",")
+                        note = sseqNote.index(param[0][:2]) + (int(param[0][2:]) * 12)
+                        commands.append(SSEQCommand(channel, location, position, "Note", note + (int(param[1]) << 8) + (int(param[2]) << 16)))
                     else:
                         raise ValueError(f"Undefined Command {command}")
+    # get the number of channels, calculate the header size, so the relative pointers can have an offset
+    
     for cmd in commands:  # fix label pointers
         if cmd.command in ("Jump", "Call"):
-            if cmd.argument[0] in labelName:
-                cmd.argument[0] = labelPosition[labelName.index(cmd.argument[0])]
+            if cmd.argument in labelName:
+                cmd.argument = labelPosition[labelName.index(cmd.argument)]
             else:
-                raise ValueError(f"Label \"{cmd.argument[0]}\" is not defined")
+                raise ValueError(f"Label \"{cmd.argument}\" is not defined")
+    for cmd in commands:
+        if cmd.command == "Note":
+            cmd.binary += cmd.argument.to_bytes(3, "little")
+        else:
+            try:
+                cmd.binary += (sseqCmdName.index(cmd.command) + 0x80).to_bytes(1, "little")
+            except Exception:
+                raise ValueError(f"Undefined Command {cmd.command}")
+            if cmd.argument:
+                commandSize = sseqCmdArgs[sseqCmdName.index(cmd.command)]
+                if commandSize == -1:
+                    delay = int(cmd.argument)
+                    commandSize = 1
+                    delay >>= 7
+                    for i in range(3):
+                        if delay:
+                            delay >>= 7
+                            commandSize += 1
+                cmd.binary += int(cmd.argument).to_bytes(commandSize, "little")
+    testPath = f"{args.folder}/Files/{itemString[SEQ]}/{fName}"
+    with open(testPath, "wb") as sseqFile:
+        for cmd in commands:
+            sseqFile.write(cmd.binary)
+            print(f"{cmd.command}: {cmd.binary}")
+    
