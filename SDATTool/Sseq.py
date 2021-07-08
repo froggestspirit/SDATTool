@@ -136,6 +136,29 @@ class SSEQCommand:
         self.binary = bytearray()
 
 
+def variable_length_size(length):
+    commandSize = 1
+    for i in range(3):
+        if length > 0x7F:
+            length >>= 7
+            commandSize += 1
+    return commandSize
+
+
+def write_variable_length(length):
+    commandSize = 1
+    out = 0
+    for i in range(3):
+        if length > 0x7F:
+            out += (length & 0x7F)
+            out <<= 8
+            out |= 0x80
+            length >>= 7
+            commandSize += 1
+    out += (length & 0x7F)
+    return out, commandSize
+
+
 def unpack_sseq(sdat, tempPath):
     sseqSize = read_long(sdat, pos=sdat.pos + 0x14)
     sseqEnd = sdat.pos + 16 + sseqSize
@@ -157,7 +180,8 @@ def unpack_sseq(sdat, tempPath):
                 numTracks += 1
             curTrack <<= 1
     else:
-        sdat.pos = sseqEnd
+        usedTracks = 1
+        numTracks = 1
 
     trackOffset[0] = sdat.pos  # Workaround to place the first track header
     while sdat.pos < sseqEnd:
@@ -207,7 +231,8 @@ def unpack_sseq(sdat, tempPath):
                     numTracks += 1
                 curTrack <<= 1
         else:
-            sdat.pos = sseqEnd
+            usedTracks = 1
+            numTracks = 1
 
         curTrack = 0
         trackOffset[0] = sdat.pos  # Workaround to place the first track header
@@ -231,13 +256,14 @@ def unpack_sseq(sdat, tempPath):
                 commandArgLen = sseqCmdArgs[command - 0x80]
                 if commandArgLen == -1:
                     commandArgLen = 1
-                    commandArg = (sdat.data[sdat.pos] & 0x7F)
+                    commandArg = 0
                     for i in range(3):
                         if sdat.data[sdat.pos] > 0x7F:
-                            commandArg <<= 7
                             commandArg += (sdat.data[sdat.pos] & 0x7F)
+                            commandArg <<= 7
                             sdat.pos += 1
                             commandArgLen += 1
+                    commandArg += (sdat.data[sdat.pos] & 0x7F)
                     sdat.pos += 1
                 else:
                     commandArgMask = 0
@@ -256,14 +282,15 @@ def unpack_sseq(sdat, tempPath):
             else:
                 velocity = sdat.data[sdat.pos]
                 sdat.pos += 1
-                commandArg = (sdat.data[sdat.pos] & 0x7F)
                 commandArgLen = 1
+                commandArg = 0
                 for i in range(3):
                     if sdat.data[sdat.pos] > 0x7F:
-                        commandArg <<= 7
                         commandArg += (sdat.data[sdat.pos] & 0x7F)
+                        commandArg <<= 7
                         sdat.pos += 1
                         commandArgLen += 1
+                commandArg += (sdat.data[sdat.pos] & 0x7F)
                 sdat.pos += 1
                 if sdat.pos <= sseqEnd:
                     sseqFile.write(f"\t{sseqNote[command % 12]}{int(command / 12)},{velocity},{commandArg}\n")
@@ -277,10 +304,12 @@ def build_sseq(sdat, args, fName):  # unfinished, in progress
     with open(testPath, "r") as sseqFile:
         done = False
         commands = []
-        trackOffset = [0] * 16
+        trackOffset = [-1] * 16
         labelName = []
         labelPosition = []
         channel = -1
+        trackCount = 0
+        tracksUsed = 0
         position = 0  # position in reference to the number of bytes
         location = 0  # location of commands in reference to the song and channels
         while not done:
@@ -293,9 +322,13 @@ def build_sseq(sdat, args, fName):  # unfinished, in progress
                 if thisLine.find("\t") == -1:  # label
                     thisLine = thisLine.replace(":", "")
                     if thisLine.split("_")[0] == "Track":
-                        channel = int(thisLine.split("_")[1])
+                        channel = int(thisLine.split("_")[1]) - 1
+                        if channel > 15:
+                            raise ValueError(f"Invalid track number {channel}")
                         trackOffset[channel] = position
                         location = 0
+                        trackCount += 1
+                        tracksUsed |= 1 << channel
                         if thisLine in labelName:
                             raise ValueError(f"Label {thisLine} is defined more than once")
                     labelName.append(thisLine)
@@ -312,51 +345,68 @@ def build_sseq(sdat, args, fName):  # unfinished, in progress
                             location += int(thisLine[1])
                         commandSize = sseqCmdArgs[sseqCmdName.index(command)]
                         if commandSize == -1:
-                            delay = int(thisLine[1])
-                            commandSize = 1
-                            delay >>= 7
-                            for i in range(3):
-                                if delay:
-                                    delay >>= 7
-                                    commandSize += 1
+                            commandSize = variable_length_size(int(thisLine[1]))
                         position += commandSize + 1
                     elif command.split(",")[0][:2] in sseqNote:  # Check if it's a note
                         param = command.split(",")
                         note = sseqNote.index(param[0][:2]) + (int(param[0][2:]) * 12)
-                        commands.append(SSEQCommand(channel, location, position, "Note", note + (int(param[1]) << 8) + (int(param[2]) << 16)))
+                        commands.append(SSEQCommand(channel, location, position, "Note", [note, int(param[1]), int(param[2])]))
+                        position += 2 + variable_length_size(int(param[2]))
+                    elif command[0:10] == "Unknown_0x":
+                        commands.append(SSEQCommand(channel, location, position, "Unknown", int(command[10:12], 16)))
+                        position += 1
                     else:
                         raise ValueError(f"Undefined Command {command}")
-    # get the number of channels, calculate the header size, so the relative pointers can have an offset
-    
-    for cmd in commands:  # fix label pointers
-        if cmd.command in ("Jump", "Call"):
-            if cmd.argument in labelName:
-                cmd.argument = labelPosition[labelName.index(cmd.argument)]
-            else:
-                raise ValueError(f"Label \"{cmd.argument}\" is not defined")
-    for cmd in commands:
-        if cmd.command == "Note":
-            cmd.binary += cmd.argument.to_bytes(3, "little")
-        else:
-            try:
-                cmd.binary += (sseqCmdName.index(cmd.command) + 0x80).to_bytes(1, "little")
-            except Exception:
-                raise ValueError(f"Undefined Command {cmd.command}")
-            if cmd.argument:
-                commandSize = sseqCmdArgs[sseqCmdName.index(cmd.command)]
-                if commandSize == -1:
-                    delay = int(cmd.argument)
-                    commandSize = 1
-                    delay >>= 7
-                    for i in range(3):
-                        if delay:
-                            delay >>= 7
-                            commandSize += 1
-                cmd.binary += int(cmd.argument).to_bytes(commandSize, "little")
+
+    headerSize = 0
+    if trackCount > 1:
+        headerSize += 3 + ((trackCount - 1) * 5)
+    sseqSize = headerSize + 0x1C + position
+    sseqSize = (sseqSize + 3) & ~3  # pad to the next word
+    sseqHeader = bytearray()
+    sseqHeader += b'SSEQ'  # Header
+    sseqHeader += b'\xFF\xFE\x00\x01'  # magic
+    sseqHeader += sseqSize.to_bytes(4, byteorder='little')  # size
+    sseqHeader += b'\x10\x00\x01\x00'  # structure size and blocks
+    sseqHeader += b'DATA'
+    sseqHeader += (sseqSize - 16).to_bytes(4, byteorder='little')  # struct size
+    sseqHeader += b'\x1C\x00\x00\x00'  # sequenced data offset
+    if trackCount > 1:
+        sseqHeader += b'\xFE'
+        sseqHeader += tracksUsed.to_bytes(2, byteorder='little')
+    for i in range(1, 16):
+        if tracksUsed & (1 << i):
+            trackOffset[i] += headerSize
+            sseqHeader += b'\x93'
+            sseqHeader += i.to_bytes(1, byteorder='little')
+            sseqHeader += trackOffset[i].to_bytes(3, byteorder='little')
     testPath = f"{args.folder}/Files/{itemString[SEQ]}/{fName}"
     with open(testPath, "wb") as sseqFile:
-        for cmd in commands:
+        sseqFile.write(sseqHeader)
+        for cmd in commands:  # fix label pointers
+            if cmd.command in ("Jump", "Call"):
+                if cmd.argument in labelName:
+                    cmd.argument = labelPosition[labelName.index(cmd.argument)] + headerSize
+                else:
+                    raise ValueError(f"Label \"{cmd.argument}\" is not defined")
+            if cmd.command == "Note":
+                cmd.binary += cmd.argument[0].to_bytes(1, "little")
+                cmd.binary += cmd.argument[1].to_bytes(1, "little")
+                noteLength, size = write_variable_length(cmd.argument[2])
+                cmd.binary += noteLength.to_bytes(size, "little")
+            elif cmd.command == "Unknown":
+                cmd.binary += cmd.argument.to_bytes(1, "little")
+            else:
+                try:
+                    cmd.binary += (sseqCmdName.index(cmd.command) + 0x80).to_bytes(1, "little")
+                except Exception:
+                    raise ValueError(f"Undefined Command {cmd.command}")
+                if cmd.argument:
+                    commandSize = sseqCmdArgs[sseqCmdName.index(cmd.command)]
+                    if commandSize == -1:
+                        noteLength, size = write_variable_length(int(cmd.argument))
+                        cmd.binary += noteLength.to_bytes(size, "little")
+                    else:
+                        cmd.binary += int(cmd.argument).to_bytes(commandSize, "little")
             sseqFile.write(cmd.binary)
-            print(f"{cmd.command}: {cmd.binary}")
-    #pad to nearest word
-    
+        sseqFile.write(b'\x00' * (sseqSize - (headerSize + 0x1C + position)))
