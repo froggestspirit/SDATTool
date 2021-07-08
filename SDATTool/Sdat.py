@@ -559,7 +559,6 @@ def build_fileBlock(sdat, args):
     sdat.data += b'FILE'  # Header
     sdat.data += bytearray(4)  # fileBlock size
     append_long(sdat, sdat.itemCount[FILE])  # number of files
-    sdat.data += bytearray(4)  # reserved
     sdat.data += bytearray((0x20 - (len(sdat.data) & 0x1F)) & 0x1F)  # pad to the nearest 0x20 byte alignment
 
     for i, fName in enumerate(sdat.names[FILE]):  # Check for source files
