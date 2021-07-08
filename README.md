@@ -42,6 +42,8 @@ New in version 1.3.0:
 
 -Raw files no longer extract by default. They can be extracted with the -wr flag
 
+-SSEQ files are now properly parsed to txt, and compiled back
+
 New in version 1.2.2:
 
 -Optimize for RAM option now creates only one SWAR per sseq, even if it's bank normally uses more
