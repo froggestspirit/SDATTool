@@ -5,7 +5,7 @@ Unpack/Pack NDS SDAT Files
 
 Make backups, this can overwrite files without confirmation
 
-Usage: python3 SDATTool.py [SDAT File] [mode] [SDAT Folder] [flags]
+Usage: python3 SDATTool [SDAT File] [mode] [SDAT Folder] [flags]
 
 Modes: 
 
