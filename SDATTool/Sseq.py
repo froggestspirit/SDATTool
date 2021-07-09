@@ -126,7 +126,18 @@ sseqCmdArgs = (  # -1 for variable length
 )
 
 
-class SSEQCommand:
+class Sequence:
+    def __init__(self):
+        self.commands = []
+        self.trackOffset = [-1] * 16
+        self.labelPosition = []
+        self.labelName = []
+        self.trackCount = 0
+        self.tracksUsed = 0
+        self.size = 0
+
+
+class SSEQCommand(Sequence):
     def __init__(self, channel, location, position, command, argument):
         self.channel = channel
         self.location = location
@@ -159,60 +170,56 @@ def write_variable_length(length):
     return out, commandSize
 
 
-def unpack_sseq(sdat, tempPath):
+def read_sseq(sdat):
     sseqSize = read_long(sdat, pos=sdat.pos + 0x14)
     sseqEnd = sdat.pos + 16 + sseqSize
     sdat.pos += 0x1C
     sseqStart = sdat.pos
-    commands = []
-    trackOffset = [-1] * 16
-    trackLabel = []
-    trackLabelName = []
+    seq = Sequence()
     command = sdat.data[sdat.pos]
     if command == 0xFE:
-        usedTracks = read_short(sdat, pos=sdat.pos + 1)
+        seq.tracksUsed = read_short(sdat, pos=sdat.pos + 1)
         sdat.pos += 3
-        numTracks = 0
         curTrack = 1
         while curTrack < 16:
-            if usedTracks & curTrack:
-                numTracks += 1
+            if seq.tracksUsed & curTrack:
+                seq.trackCount += 1
             curTrack <<= 1
     else:
-        usedTracks = 1
-        numTracks = 1
+        seq.tracksUsed = 1
+        seq.trackCount = 1
     command = sdat.data[sdat.pos]
     while command == 0x93:  # Track Pointer
         trackInfo = read_long(sdat, pos=sdat.pos + 1)
-        trackOffset[trackInfo & 0xFF] = (trackInfo >> 8)
+        seq.trackOffset[trackInfo & 0xFF] = (trackInfo >> 8)
         sdat.pos += 5
         command = sdat.data[sdat.pos]
 
     channel = 0
-    trackOffset[0] = (sdat.pos - sseqStart)
+    seq.trackOffset[0] = (sdat.pos - sseqStart)
     command = 0xFF
     while sdat.pos < sseqEnd:
         if command in (0x94, 0xFD, 0xFF):  # Only look for channel changes when the last command was Jump, Return, or End
-            for i, track in enumerate(trackOffset):
+            for i, track in enumerate(seq.trackOffset):
                 if track > -1:
                     if sdat.pos >= track:
                         channel = i
                         location = 0
         command = sdat.data[sdat.pos]
-        sdat.pos += 1  # temporary
+        sdat.pos += 1
         if command in (0x94, 0x95):  # Jump or Call
             commandArgLen = sseqCmdArgs[command - 0x80]
             commandArg = (read_long(sdat, pos=sdat.pos) & 0xFFFFFF)
-            if commandArg not in trackLabel:
-                trackLabel.append(commandArg)
-                if commandArg not in trackOffset:
-                    trackLabelName.append(f"Label_0x{hex(commandArg).lstrip('0x').rstrip('L').zfill(2).upper()}")
+            if commandArg not in seq.labelPosition:
+                seq.labelPosition.append(commandArg)
+                if commandArg not in seq.trackOffset:
+                    seq.labelName.append(f"Label_0x{hex(commandArg).lstrip('0x').rstrip('L').zfill(2).upper()}")
                 else:
-                    trackLabelName.append(f"Track_{trackOffset.index(commandArg) + 1}")
-                commandArg = trackLabelName[-1]
+                    seq.labelName.append(f"Track_{seq.trackOffset.index(commandArg) + 1}")
+                commandArg = seq.labelName[-1]
             else:
-                commandArg = trackLabelName[trackLabel.index(commandArg)]
-            commands.append(SSEQCommand(channel, location, (sdat.pos - sseqStart) - 1, sseqCmdName[command - 0x80], commandArg))
+                commandArg = seq.labelName[seq.labelPosition.index(commandArg)]
+            seq.commands.append(SSEQCommand(channel, location, (sdat.pos - sseqStart) - 1, sseqCmdName[command - 0x80], commandArg))
             sdat.pos += commandArgLen
         elif command >= 0x80:
             commandName = sseqCmdName[command - 0x80]
@@ -232,7 +239,7 @@ def unpack_sseq(sdat, tempPath):
                 commandArgLen += 1
             elif commandArgLen > 0:
                 commandArg = int.from_bytes(sdat.data[sdat.pos : sdat.pos + commandArgLen], "little")
-            commands.append(SSEQCommand(channel, location, (sdat.pos - sseqStart) - 1, commandName, commandArg))
+            seq.commands.append(SSEQCommand(channel, location, (sdat.pos - sseqStart) - 1, commandName, commandArg))
             if command == 0x80:
                 location += commandArg
             sdat.pos += commandArgLen
@@ -247,23 +254,25 @@ def unpack_sseq(sdat, tempPath):
             commandArg += (sdat.data[sdat.pos + commandArgLen] & 0x7F)
             commandArgLen += 1
             if sdat.pos + commandArgLen < sseqEnd:
-                commands.append(SSEQCommand(channel, location, (sdat.pos - sseqStart) - 1, "Note", [command, sdat.data[sdat.pos], commandArg]))
+                seq.commands.append(SSEQCommand(channel, location, (sdat.pos - sseqStart) - 1, "Note", [command, sdat.data[sdat.pos], commandArg]))
             sdat.pos += commandArgLen
     sdat.pos = sseqStart - 0x1C
+    return seq
 
-    # write the txt file
+
+def write_sseq_to_txt(seq, tempPath):
     channel = -1
     with open(f"{tempPath}.txt", "w") as sseqFile:
-        for cmd in commands:
+        for cmd in seq.commands:
             if cmd.channel != channel:
-                if cmd.position in trackOffset:
-                    channel = trackOffset.index(cmd.position)
+                if cmd.position in seq.trackOffset:
+                    channel = seq.trackOffset.index(cmd.position)
                     sseqFile.write(f"Track_{channel + 1}:\n")
-            if cmd.position in trackLabel:
-                id = trackLabel.index(cmd.position)
-                sseqFile.write(f"{trackLabelName[id]}:\n")
-                del trackLabel[id]
-                del trackLabelName[id]
+            if cmd.position in seq.labelPosition:
+                id = seq.labelPosition.index(cmd.position)
+                sseqFile.write(f"{seq.labelName[id]}:\n")
+                del seq.labelPosition[id]
+                del seq.labelName[id]
             if cmd.command == "Note":
                 sseqFile.write(f"\t{sseqNote[cmd.argument[0] % 12]}{int(cmd.argument[0] / 12)},{cmd.argument[1]},{cmd.argument[2]}\n")
             else:
@@ -276,19 +285,14 @@ def unpack_sseq(sdat, tempPath):
                         sseqFile.write(f"\t{cmd.command}\n")
     
 
-def build_sseq(sdat, args, fName):  # unfinished, in progress
+def read_sseq_from_txt(args, fName):
     testPath = f"{args.folder}/Files/{itemString[SEQ]}/{fName[:-5]}.txt"
     if not os.path.exists(testPath):
         raise Exception(f"Missing File:{testPath}")
     with open(testPath, "r") as sseqFile:
         done = False
-        commands = []
-        trackOffset = [-1] * 16
-        labelName = []
-        labelPosition = []
+        seq = Sequence()
         channel = -1
-        trackCount = 0
-        tracksUsed = 0
         position = 0  # position in reference to the number of bytes
         location = 0  # location of commands in reference to the song and channels
         while not done:
@@ -304,22 +308,22 @@ def build_sseq(sdat, args, fName):  # unfinished, in progress
                         channel = int(thisLine.split("_")[1]) - 1
                         if channel > 15:
                             raise ValueError(f"Invalid track number {channel}")
-                        trackOffset[channel] = position
+                        seq.trackOffset[channel] = position
                         location = 0
-                        trackCount += 1
-                        tracksUsed |= 1 << channel
-                        if thisLine in labelName:
+                        seq.trackCount += 1
+                        seq.tracksUsed |= 1 << channel
+                        if thisLine in seq.labelName:
                             raise ValueError(f"Label {thisLine} is defined more than once")
-                    labelName.append(thisLine)
-                    labelPosition.append(position)
+                    seq.labelName.append(thisLine)
+                    seq.labelPosition.append(position)
                 else:  # not a label
                     thisLine = thisLine.replace("\t", "").split(" ")
                     command = thisLine[0]
                     if command in sseqCmdName:
                         if len(thisLine) > 1:
-                            commands.append(SSEQCommand(channel, location, position, command, thisLine[1]))
+                            seq.commands.append(SSEQCommand(channel, location, position, command, thisLine[1]))
                         else:
-                            commands.append(SSEQCommand(channel, location, position, command, None))
+                            seq.commands.append(SSEQCommand(channel, location, position, command, None))
                         if command == "Delay":
                             location += int(thisLine[1])
                         commandSize = sseqCmdArgs[sseqCmdName.index(command)]
@@ -329,18 +333,22 @@ def build_sseq(sdat, args, fName):  # unfinished, in progress
                     elif command.split(",")[0][:2] in sseqNote:  # Check if it's a note
                         param = command.split(",")
                         note = sseqNote.index(param[0][:2]) + (int(param[0][2:]) * 12)
-                        commands.append(SSEQCommand(channel, location, position, "Note", [note, int(param[1]), int(param[2])]))
+                        seq.commands.append(SSEQCommand(channel, location, position, "Note", [note, int(param[1]), int(param[2])]))
                         position += 2 + variable_length_size(int(param[2]))
                     elif command[0:10] == "Unknown_0x":
-                        commands.append(SSEQCommand(channel, location, position, "Unknown", int(command[10:12], 16)))
+                        seq.commands.append(SSEQCommand(channel, location, position, "Unknown", int(command[10:12], 16)))
                         position += 1
                     else:
                         raise ValueError(f"Undefined Command {command}")
+    seq.size = position
+    return seq
 
+
+def write_sseq(seq, args, fName):
     headerSize = 0
-    if trackCount > 1:
-        headerSize += 3 + ((trackCount - 1) * 5)
-    sseqSize = headerSize + 0x1C + position
+    if seq.trackCount > 1:
+        headerSize += 3 + ((seq.trackCount - 1) * 5)
+    sseqSize = headerSize + 0x1C + seq.size
     sseqSize = (sseqSize + 3) & ~3  # pad to the next word
     sseqHeader = bytearray()
     sseqHeader += b'SSEQ'  # Header
@@ -350,22 +358,22 @@ def build_sseq(sdat, args, fName):  # unfinished, in progress
     sseqHeader += b'DATA'
     sseqHeader += (sseqSize - 16).to_bytes(4, byteorder='little')  # struct size
     sseqHeader += b'\x1C\x00\x00\x00'  # sequenced data offset
-    if trackCount > 1:
+    if seq.trackCount > 1:
         sseqHeader += b'\xFE'
-        sseqHeader += tracksUsed.to_bytes(2, byteorder='little')
+        sseqHeader += seq.tracksUsed.to_bytes(2, byteorder='little')
     for i in range(1, 16):
-        if tracksUsed & (1 << i):
-            trackOffset[i] += headerSize
+        if seq.tracksUsed & (1 << i):
+            seq.trackOffset[i] += headerSize
             sseqHeader += b'\x93'
             sseqHeader += i.to_bytes(1, byteorder='little')
-            sseqHeader += trackOffset[i].to_bytes(3, byteorder='little')
+            sseqHeader += seq.trackOffset[i].to_bytes(3, byteorder='little')
     testPath = f"{args.folder}/Files/{itemString[SEQ]}/{fName}"
     with open(testPath, "wb") as sseqFile:
         sseqFile.write(sseqHeader)
-        for cmd in commands:  # fix label pointers
+        for cmd in seq.commands:  # fix label pointers
             if cmd.command in ("Jump", "Call"):
-                if cmd.argument in labelName:
-                    cmd.argument = labelPosition[labelName.index(cmd.argument)] + headerSize
+                if cmd.argument in seq.labelName:
+                    cmd.argument = seq.labelPosition[seq.labelName.index(cmd.argument)] + headerSize
                 else:
                     raise ValueError(f"Label \"{cmd.argument}\" is not defined")
             if cmd.command == "Note":
@@ -388,4 +396,4 @@ def build_sseq(sdat, args, fName):  # unfinished, in progress
                     else:
                         cmd.binary += int(cmd.argument).to_bytes(commandSize, "little")
             sseqFile.write(cmd.binary)
-        sseqFile.write(b'\x00' * (sseqSize - (headerSize + 0x1C + position)))
+        sseqFile.write(b'\x00' * (sseqSize - (headerSize + 0x1C + seq.size)))
