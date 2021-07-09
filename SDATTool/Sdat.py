@@ -1,7 +1,7 @@
 import os
 import hashlib
 from const import itemHeader, itemExt, itemString, infoBlockGroup, infoBlockGroupType
-from Sseq import unpack_sseq, build_sseq
+from Sseq import read_sseq, write_sseq_to_txt, read_sseq_from_txt, write_sseq
 from Swar import unpack_swar, build_swar
 from Sbnk import unpack_sbnk, build_sbnk
 from const import infoBlockGroup, infoBlockGroupType, itemString
@@ -545,7 +545,7 @@ def unpack_fileBlock(sdat, args):
         elif fileHeader == b'SBNK':
             unpack_sbnk(sdat, tempPath)
         elif fileHeader == b'SSEQ':
-            unpack_sseq(sdat, tempPath)
+            write_sseq_to_txt(read_sseq(sdat), tempPath)
         if args.writeRaw or (fileHeader not in [b'SWAR', b'SBNK', b'SSEQ']):
             with open(tempPath + tempExt, "wb") as outfile:
                 outfile.write(sdat.data[sdat.pos:(sdat.pos + tempSize)])
@@ -570,4 +570,4 @@ def build_fileBlock(sdat, args):
                 swavName = sdat.fileBlock.file[i].subFile
                 build_swar(sdat, args, fName, swavName)
             elif fName[-5:] == ".sseq":  # can the sseq be built?
-                build_sseq(sdat, args, fName)
+                write_sseq(read_sseq_from_txt(args, fName), args, fName)
