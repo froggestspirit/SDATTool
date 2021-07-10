@@ -2,6 +2,7 @@ import os
 import hashlib
 from const import itemHeader, itemExt, itemString, infoBlockGroup, infoBlockGroupType
 from Sseq import read_sseq, write_sseq_to_txt, read_sseq_from_txt, write_sseq
+from Midi import write_sseq_to_midi
 from Swar import unpack_swar, build_swar
 from Sbnk import unpack_sbnk, build_sbnk
 from const import infoBlockGroup, infoBlockGroupType, itemString

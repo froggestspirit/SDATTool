@@ -16,7 +16,7 @@ STRM = 7
 FILE = 8
 
 
-sseqNote = (
+seqNote = (
     "C_",
     "C#",
     "D_",
@@ -171,20 +171,18 @@ def write_variable_length(length):
 
 
 def read_sseq(sdat):
-    sseqSize = read_long(sdat, pos=sdat.pos + 0x14)
-    sseqEnd = sdat.pos + 16 + sseqSize
+    sseqSize = read_long(sdat, pos=sdat.pos + 0x8)
+    sseqEnd = sdat.pos + sseqSize
     sdat.pos += 0x1C
-    sseqStart = sdat.pos
+    sseqFilePos = sdat.pos
     seq = Sequence()
     command = sdat.data[sdat.pos]
     if command == 0xFE:
         seq.tracksUsed = read_short(sdat, pos=sdat.pos + 1)
         sdat.pos += 3
-        curTrack = 1
-        while curTrack < 16:
-            if seq.tracksUsed & curTrack:
+        for i in range(16):
+            if seq.tracksUsed & (1 << i):
                 seq.trackCount += 1
-            curTrack <<= 1
     else:
         seq.tracksUsed = 1
         seq.trackCount = 1
@@ -196,7 +194,12 @@ def read_sseq(sdat):
         command = sdat.data[sdat.pos]
 
     channel = 0
-    seq.trackOffset[0] = (sdat.pos - sseqStart)
+    sseqStart = sdat.pos - sseqFilePos
+    sseqOffset = sdat.pos
+    for i, offset in enumerate(seq.trackOffset):
+        if offset > -1:
+            seq.trackOffset[i] -= sseqStart
+    seq.trackOffset[0] = 0
     command = 0xFF
     while sdat.pos < sseqEnd:
         if command in (0x94, 0xFD, 0xFF):  # Only look for channel changes when the last command was Jump, Return, or End
@@ -209,7 +212,7 @@ def read_sseq(sdat):
         sdat.pos += 1
         if command in (0x94, 0x95):  # Jump or Call
             commandArgLen = sseqCmdArgs[command - 0x80]
-            commandArg = (read_long(sdat, pos=sdat.pos) & 0xFFFFFF)
+            commandArg = (read_long(sdat, pos=sdat.pos) & 0xFFFFFF) - sseqStart
             if commandArg not in seq.labelPosition:
                 seq.labelPosition.append(commandArg)
                 if commandArg not in seq.trackOffset:
@@ -219,30 +222,33 @@ def read_sseq(sdat):
                 commandArg = seq.labelName[-1]
             else:
                 commandArg = seq.labelName[seq.labelPosition.index(commandArg)]
-            seq.commands.append(SSEQCommand(channel, location, (sdat.pos - sseqStart) - 1, sseqCmdName[command - 0x80], commandArg))
+            seq.commands.append(SSEQCommand(channel, location, (sdat.pos - sseqOffset) - 1, sseqCmdName[command - 0x80], commandArg))
             sdat.pos += commandArgLen
+            seq.size = (sdat.pos - sseqOffset)
         elif command >= 0x80:
             commandName = sseqCmdName[command - 0x80]
-            if commandName == "":
-                commandName = f"Unknown_0x{hex(command).lstrip('0x').rstrip('L').zfill(2).upper()}"
             commandArgLen = sseqCmdArgs[command - 0x80]
             commandArg = None
-            if commandArgLen == -1:
-                commandArgLen = 0
-                commandArg = 0
-                for i in range(3):
-                    if sdat.data[sdat.pos + commandArgLen] > 0x7F:
-                        commandArg += (sdat.data[sdat.pos + commandArgLen] & 0x7F)
-                        commandArg <<= 7
-                        commandArgLen += 1
-                commandArg += (sdat.data[sdat.pos + commandArgLen] & 0x7F)
-                commandArgLen += 1
-            elif commandArgLen > 0:
-                commandArg = int.from_bytes(sdat.data[sdat.pos : sdat.pos + commandArgLen], "little")
-            seq.commands.append(SSEQCommand(channel, location, (sdat.pos - sseqStart) - 1, commandName, commandArg))
-            if command == 0x80:
-                location += commandArg
+            if commandName == "":
+                seq.commands.append(SSEQCommand(channel, location, (sdat.pos - sseqOffset) - 1, "Unknown", command))
+            else:
+                if commandArgLen == -1:
+                    commandArgLen = 0
+                    commandArg = 0
+                    for i in range(3):
+                        if sdat.data[sdat.pos + commandArgLen] > 0x7F:
+                            commandArg += (sdat.data[sdat.pos + commandArgLen] & 0x7F)
+                            commandArg <<= 7
+                            commandArgLen += 1
+                    commandArg += (sdat.data[sdat.pos + commandArgLen] & 0x7F)
+                    commandArgLen += 1
+                elif commandArgLen > 0:
+                    commandArg = int.from_bytes(sdat.data[sdat.pos : sdat.pos + commandArgLen], "little")
+                seq.commands.append(SSEQCommand(channel, location, (sdat.pos - sseqOffset) - 1, commandName, commandArg))
+                if command == 0x80:
+                    location += commandArg
             sdat.pos += commandArgLen
+            seq.size = (sdat.pos - sseqOffset)
         else:
             commandArgLen = 1
             commandArg = 0
@@ -254,9 +260,10 @@ def read_sseq(sdat):
             commandArg += (sdat.data[sdat.pos + commandArgLen] & 0x7F)
             commandArgLen += 1
             if sdat.pos + commandArgLen < sseqEnd:
-                seq.commands.append(SSEQCommand(channel, location, (sdat.pos - sseqStart) - 1, "Note", [command, sdat.data[sdat.pos], commandArg]))
-            sdat.pos += commandArgLen
-    sdat.pos = sseqStart - 0x1C
+                seq.commands.append(SSEQCommand(channel, location, (sdat.pos - sseqOffset) - 1, "Note", [command, sdat.data[sdat.pos], commandArg]))
+                sdat.pos += commandArgLen
+                seq.size = (sdat.pos - sseqOffset)
+    sdat.pos = sseqFilePos
     return seq
 
 
@@ -274,7 +281,9 @@ def write_sseq_to_txt(seq, tempPath):
                 del seq.labelPosition[id]
                 del seq.labelName[id]
             if cmd.command == "Note":
-                sseqFile.write(f"\t{sseqNote[cmd.argument[0] % 12]}{int(cmd.argument[0] / 12)},{cmd.argument[1]},{cmd.argument[2]}\n")
+                sseqFile.write(f"\t{seqNote[cmd.argument[0] % 12]}{int(cmd.argument[0] / 12)},{cmd.argument[1]},{cmd.argument[2]}\n")
+            elif cmd.command == "Unknown":
+                sseqFile.write(f"\tUnknown_0x{hex(cmd.argument).lstrip('0x').rstrip('L').zfill(2).upper()}\n")
             else:
                 if cmd.argument != None:
                     sseqFile.write(f"\t{cmd.command} {cmd.argument}\n")
@@ -330,9 +339,9 @@ def read_sseq_from_txt(args, fName):
                         if commandSize == -1:
                             commandSize = variable_length_size(int(thisLine[1]))
                         position += commandSize + 1
-                    elif command.split(",")[0][:2] in sseqNote:  # Check if it's a note
+                    elif command.split(",")[0][:2] in seqNote:  # Check if it's a note
                         param = command.split(",")
-                        note = sseqNote.index(param[0][:2]) + (int(param[0][2:]) * 12)
+                        note = seqNote.index(param[0][:2]) + (int(param[0][2:]) * 12)
                         seq.commands.append(SSEQCommand(channel, location, position, "Note", [note, int(param[1]), int(param[2])]))
                         position += 2 + variable_length_size(int(param[2]))
                     elif command[0:10] == "Unknown_0x":
@@ -388,7 +397,7 @@ def write_sseq(seq, args, fName):
                     cmd.binary += (sseqCmdName.index(cmd.command) + 0x80).to_bytes(1, "little")
                 except Exception:
                     raise ValueError(f"Undefined Command {cmd.command}")
-                if cmd.argument:
+                if cmd.argument != None:
                     commandSize = sseqCmdArgs[sseqCmdName.index(cmd.command)]
                     if commandSize == -1:
                         noteLength, size = write_variable_length(int(cmd.argument))
