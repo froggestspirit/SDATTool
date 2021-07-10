@@ -145,15 +145,18 @@ def write_sseq_to_midi(seq, args, fName):
     midiHeader += b'\x00\x01'  # Midi format 1
     midiHeader += seq.trackCount.to_bytes(2, byteorder='big')  # track count
     midiHeader += b'\x00\x30'  # delta-time
-    if seq.trackCount > 1:
-        midiHeader += b'\xFE'
-        midiHeader += seq.tracksUsed.to_bytes(2, byteorder='little')
-    for i in range(1, 16):
-        if seq.tracksUsed & (1 << i):
-            seq.trackOffset[i] += headerSize
-            midiHeader += b'\x93'
-            midiHeader += i.to_bytes(1, byteorder='little')
-            midiHeader += seq.trackOffset[i].to_bytes(3, byteorder='little')
+
+    # write to byte arrays in commands, while calculating track length
+    channel = -1
+    channelSize = [0] * 16
+    position = 0
+    for cmd in seq.commands:
+        if cmd.channel != channel:
+            channel = cmd.channel
+            activeNotes = [-1] * 128
+            location = 0
+        
+
     testPath = f"{args.folder}/Files/{itemString[SEQ]}/{fName}.mid"
     with open(testPath, "wb") as midiFile:
         midiFile.write(midiHeader)
