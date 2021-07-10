@@ -11,7 +11,7 @@ import json
 from shutil import copyfile
 
 from const import itemExt, itemString, infoBlockGroup, infoBlockGroupFile
-from Sseq import sseqNote
+from Sseq import seqNote
 from Sdat import SDAT, InfoBlock, FileBlock, unpack_symbBlock, unpack_infoBlock, unpack_fileBlock, \
                  build_symbBlock, build_infoBlock, build_fatBlock, build_fileBlock
 from util import write_long
@@ -118,11 +118,11 @@ def build(args):  # Build
                                             if retCall > -1:
                                                 curLine = retCall
                                                 retCall = -1
-                                        elif sseqLines[curLine].replace("\t","")[:2] in sseqNote:
-                                            curNote = sseqNote.index(sseqLines[curLine].replace("\t","")[:2]) + (int(sseqLines[curLine][3]) * 12)
+                                        elif sseqLines[curLine].replace("\t","")[:2] in seqNote:
+                                            curNote = seqNote.index(sseqLines[curLine].replace("\t","")[:2]) + (int(sseqLines[curLine][3]) * 12)
                                             if not (curInst << 7) + curNote in tempInstUsed:
                                                 tempInstUsed.append((curInst << 7) + curNote)
-                                                testvar = sseqNote.index(sseqLines[curLine].replace("\t","")[:2])
+                                                testvar = seqNote.index(sseqLines[curLine].replace("\t","")[:2])
                                         elif sseqLines[curLine].replace("\t","").split(" ")[0] == "Instrument":
                                             curInst = int(sseqLines[curLine].replace("\t","").split(" ")[1])
                                         elif sseqLines[curLine].replace("\t","").split(" ")[0] == "Jump":
