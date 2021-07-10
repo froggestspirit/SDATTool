@@ -136,31 +136,27 @@ def write_variable_length(length):
 
 
 def write_sseq_to_midi(seq, args, fName):
-    headerSize = 0
+    headerSize = 0xE
+    #midiSize = headerSize + 0x1C + seq.size
+    #midiSize = (midiSize + 3) & ~3  # pad to the next word
+    midiHeader = bytearray()
+    midiHeader += b'MThd'  # Header
+    midiHeader += b'\x00\x00\x00\x06'  # header chunk size
+    midiHeader += b'\x00\x01'  # Midi format 1
+    midiHeader += seq.trackCount.to_bytes(2, byteorder='big')  # track count
+    midiHeader += b'\x00\x30'  # delta-time
     if seq.trackCount > 1:
-        headerSize += 3 + ((seq.trackCount - 1) * 5)
-    sseqSize = headerSize + 0x1C + seq.size
-    sseqSize = (sseqSize + 3) & ~3  # pad to the next word
-    sseqHeader = bytearray()
-    sseqHeader += b'SSEQ'  # Header
-    sseqHeader += b'\xFF\xFE\x00\x01'  # magic
-    sseqHeader += sseqSize.to_bytes(4, byteorder='little')  # size
-    sseqHeader += b'\x10\x00\x01\x00'  # structure size and blocks
-    sseqHeader += b'DATA'
-    sseqHeader += (sseqSize - 16).to_bytes(4, byteorder='little')  # struct size
-    sseqHeader += b'\x1C\x00\x00\x00'  # sequenced data offset
-    if seq.trackCount > 1:
-        sseqHeader += b'\xFE'
-        sseqHeader += seq.tracksUsed.to_bytes(2, byteorder='little')
+        midiHeader += b'\xFE'
+        midiHeader += seq.tracksUsed.to_bytes(2, byteorder='little')
     for i in range(1, 16):
         if seq.tracksUsed & (1 << i):
             seq.trackOffset[i] += headerSize
-            sseqHeader += b'\x93'
-            sseqHeader += i.to_bytes(1, byteorder='little')
-            sseqHeader += seq.trackOffset[i].to_bytes(3, byteorder='little')
-    testPath = f"{args.folder}/Files/{itemString[SEQ]}/{fName}.sseq"
-    with open(testPath, "wb") as sseqFile:
-        sseqFile.write(sseqHeader)
+            midiHeader += b'\x93'
+            midiHeader += i.to_bytes(1, byteorder='little')
+            midiHeader += seq.trackOffset[i].to_bytes(3, byteorder='little')
+    testPath = f"{args.folder}/Files/{itemString[SEQ]}/{fName}.mid"
+    with open(testPath, "wb") as midiFile:
+        midiFile.write(midiHeader)
         for cmd in seq.commands:  # fix label pointers
             if cmd.command in ("Jump", "Call"):
                 if cmd.argument in seq.labelName:
@@ -186,5 +182,5 @@ def write_sseq_to_midi(seq, args, fName):
                         cmd.binary += noteLength.to_bytes(size, "little")
                     else:
                         cmd.binary += int(cmd.argument).to_bytes(commandSize, "little")
-            sseqFile.write(cmd.binary)
-        sseqFile.write(b'\x00' * (sseqSize - (headerSize + 0x1C + seq.size)))
+            midiFile.write(cmd.binary)
+        midiFile.write(b'\x00' * (midiSize - (headerSize + 0x1C + seq.size)))
