@@ -112,10 +112,16 @@ def write_variable_length(length):
     return out, commandSize
 
 
+def fix_label_pointers(id, seq):
+    for i, pointer in enumerate(seq.trackOffset):
+        if pointer >= id:
+            seq.trackOffset[i] += 1
+    for i, pointer in enumerate(seq.labelPosition):
+        if pointer >= id:
+            seq.labelPosition[i] += 1
+
+
 def write_sseq_to_midi(seq, args, fName):
-    headerSize = 0xE
-    #midiSize = headerSize + 0x1C + seq.size
-    #midiSize = (midiSize + 3) & ~3  # pad to the next word
     midiHeader = bytearray()
     midiHeader += b'MThd'  # Header
     midiHeader += b'\x00\x00\x00\x06'  # header chunk size
@@ -125,8 +131,6 @@ def write_sseq_to_midi(seq, args, fName):
 
     # write to byte arrays in commands, while calculating track length
     channel = -1
-    channelSize = [0] * 16
-    position = 0
     i = 0
     while i < len(seq.commands):
         cmd = seq.commands[i]
@@ -150,9 +154,11 @@ def write_sseq_to_midi(seq, args, fName):
                             if length < 0:
                                 seq.commands[id].argument += length
                                 seq.commands.insert(id + 1, SSEQCommand(channel, location, seq.commands[id].position, "Delay", -length))
+                                fix_label_pointers(id + 1, seq)
                                 length = 0
                         id += 1
                     seq.commands.insert(id, SSEQCommand(channel, location, cmd.position, "NoteOff", [cmd.argument[0], 0]))
+                    fix_label_pointers(id, seq)
                     seq.commands[i].binary += (channel + 0x90).to_bytes(1, "big")
                     seq.commands[i].binary += cmd.argument[0].to_bytes(1, "big")
                     seq.commands[i].binary += cmd.argument[1].to_bytes(1, "big")
@@ -179,19 +185,46 @@ def write_sseq_to_midi(seq, args, fName):
                     noteLength, size = write_variable_length(len(f"{cmd.command}"))
                     seq.commands[i].binary += noteLength.to_bytes(size, "little")
                     seq.commands[i].binary += bytes(f"{cmd.command}", 'utf-8')
-            channelSize[channel] += len(seq.commands[i].binary)
+        i += 1
+
+    channel = -1
+    midiData = bytearray()
+    chStart = [-1] * 16
+    chEnd = [-1] * 16
+    channelPointers = list(i for i in seq.trackOffset if i > -1)
+    chPointerID = 0
+    i = 0
+    while i < len(seq.commands):
+        cmd = seq.commands[i]
+        if cmd.channel != channel:             
+            channel = cmd.channel
+            returnLoc = 0
+            chStart[channel] = len(midiData)
+        midiData += cmd.binary
+        if cmd.command == "Call":
+            returnLoc = i
+            i = seq.labelPosition[seq.labelName.index(cmd.argument)] - 1
+            cmd = seq.commands[i]
+        elif cmd.command == "Return":
+            if returnLoc:
+                i = returnLoc
+                returnLoc = 0
+                cmd = seq.commands[i]
+        elif cmd.command == "TrackEnd":
+            midiData += b'\x00\xFF\x2F\x00'
+            chEnd[channel] = len(midiData)
+            chPointerID += 1
+            if chPointerID < len(channelPointers):
+                i = channelPointers[chPointerID] - 1
+            else:
+                i = len(seq.commands)
         i += 1
 
     testPath = f"{args.folder}/Files/{itemString[SEQ]}/{fName}.mid"
     with open(testPath, "wb") as midiFile:
         midiFile.write(midiHeader)
-        channel = -1
-        for cmd in seq.commands:  # fix label pointers
-            if cmd.channel != channel:
-                if channel > -1:
-                    midiFile.write(b'\x00\xFF\x2F\x00')
-                channel = cmd.channel
+        for channel in range(16):
+            if chStart[channel] > -1:
                 midiFile.write(b'MTrk')
-                midiFile.write((channelSize[channel] + 4).to_bytes(4, "big"))
-            midiFile.write(cmd.binary)
-        midiFile.write(b'\x00\xFF\x2F\x00')
+                midiFile.write(len(midiData[chStart[channel]:chEnd[channel]]).to_bytes(4, "big"))
+                midiFile.write(midiData[chStart[channel]:chEnd[channel]])
