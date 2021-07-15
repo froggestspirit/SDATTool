@@ -18,51 +18,28 @@ FILE = 8
 
 
 midiCmdName = (
-    "Delay",  # 0x80
-    "Instrument",  # 0x81
-    "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "",
-    "",
-    "Pointer",  # 0x93
-    "Jump",  # 0x94
-    "Call",  # 0x95
-    "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "",
-    "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "",
-    "", "", "", "", "", "", "", "", "", "",
-    "Pan",  # 0xC0
-    "Volume",  # 0xC1
-    "MasterVolume",  # 0xC2
-    "Transpose",  # 0xC3
-    "PitchBend",  # 0xC4
-    "PitchBendRange",  # 0xC5
-    "Priority",  # 0xC6
-    "Poly",  # 0xC7
-    "Tie",  # 0xC8
-    "PortamentoControll",  # 0xC9
-    "ModDepth",  # 0xCA
-    "ModSpeed",  # 0xCB
-    "ModType",  # 0xCC
-    "ModRange",  # 0xCD
-    "PortamentoOnOff",  # 0xCE
-    "PortamentoTime",  # 0xCF
-    "Attack",  # 0xD0
-    "Decay",  # 0xD1
-    "Sustain",  # 0xD2
-    "Release",  # 0xD3
-    "LoopStart",  # 0xD4
-    "Expression",  # 0xD5
-    "Print",  # 0xD6
-    "", "", "", "", "", "", "", "", "",
-    "ModDelay",  # 0xE0
-    "Tempo",  # 0xE1
-    "",
-    "PitchSweep",  # 0xE3
-    "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "",
-    "", "", "", "", "", "", "", "",
-    "LoopEnd",  # 0xFC
-    "Return",  # 0xFD
-    "TracksUsed",  # 0xFE
-    "TrackEnd"  # 0xFF
+    "NoteOff",
+    "Note",
+    "AfterTouch",
+    "Controller",
+    "Instrument",
+    "AfterTouch2",  # temporary
+    "mPitchBend",
+    "Sys"
 )
+
+
+midiController = (
+    "NoteOff",
+    "Note",
+    "AfterTouch",
+    "Controller",
+    "Instrument",
+    "AfterTouch2",  # temporary
+    "mPitchBend",
+    "Sys"
+)
+
 
 midiCmdArgs = (  # -1 for variable length
     -1,  # 0x80
@@ -150,40 +127,71 @@ def write_sseq_to_midi(seq, args, fName):
     channel = -1
     channelSize = [0] * 16
     position = 0
-    for cmd in seq.commands:
+    i = 0
+    while i < len(seq.commands):
+        cmd = seq.commands[i]
         if cmd.channel != channel:
             channel = cmd.channel
-            activeNotes = [-1] * 128
             location = 0
-        
+            lastDelay = 0
+        if cmd.command == "Delay":
+            lastDelay += cmd.argument
+        else:
+            noteLength, size = write_variable_length(lastDelay)
+            seq.commands[i].binary += noteLength.to_bytes(size, "little")
+            lastDelay = 0
+            if cmd.command == 'Note':  # Unrolling the song should happen before adding the note off commands
+                length = cmd.argument[2]
+                id = i + 1
+                try:
+                    while length:
+                        if seq.commands[id].command == "Delay":
+                            length -= seq.commands[id].argument
+                            if length < 0:
+                                seq.commands[id].argument += length
+                                seq.commands.insert(id + 1, SSEQCommand(channel, location, seq.commands[id].position, "Delay", -length))
+                                length = 0
+                        id += 1
+                    seq.commands.insert(id, SSEQCommand(channel, location, cmd.position, "NoteOff", [cmd.argument[0], 0]))
+                    seq.commands[i].binary += (channel + 0x90).to_bytes(1, "big")
+                    seq.commands[i].binary += cmd.argument[0].to_bytes(1, "big")
+                    seq.commands[i].binary += cmd.argument[1].to_bytes(1, "big")
+                except Exception:
+                    del seq.commands[i].binary
+                    seq.commands[i].binary = bytearray()
+            elif cmd.command == 'NoteOff':
+                seq.commands[i].binary += (channel + 0x80).to_bytes(1, "big")
+                seq.commands[i].binary += cmd.argument[0].to_bytes(1, "big")
+                seq.commands[i].binary += cmd.argument[1].to_bytes(1, "big")
+            elif cmd.command in midiCmdName:
+                seq.commands[i].binary += (channel + ((midiCmdName.index(cmd.command) + 8) << 4)).to_bytes(1, "big")
+                seq.commands[i].binary += cmd.argument.to_bytes(1, "big")
+            elif cmd.command in midiController:
+                seq.commands[i].binary += (channel + 0xB0).to_bytes(1, "big")
+                seq.commands[i].binary += midiController.index(cmd.command).to_bytes(1, "big")
+            else:
+                seq.commands[i].binary += b'\xFF\x01'
+                if cmd.argument != None:
+                    noteLength, size = write_variable_length(len(f"{cmd.command}|{cmd.argument}"))
+                    seq.commands[i].binary += noteLength.to_bytes(size, "little")
+                    seq.commands[i].binary += bytes(f"{cmd.command}|{cmd.argument}", 'utf-8')
+                else:
+                    noteLength, size = write_variable_length(len(f"{cmd.command}"))
+                    seq.commands[i].binary += noteLength.to_bytes(size, "little")
+                    seq.commands[i].binary += bytes(f"{cmd.command}", 'utf-8')
+            channelSize[channel] += len(seq.commands[i].binary)
+        i += 1
 
     testPath = f"{args.folder}/Files/{itemString[SEQ]}/{fName}.mid"
     with open(testPath, "wb") as midiFile:
         midiFile.write(midiHeader)
+        channel = -1
         for cmd in seq.commands:  # fix label pointers
-            if cmd.command in ("Jump", "Call"):
-                if cmd.argument in seq.labelName:
-                    cmd.argument = seq.labelPosition[seq.labelName.index(cmd.argument)] + headerSize
-                else:
-                    raise ValueError(f"Label \"{cmd.argument}\" is not defined")
-            if cmd.command == "Note":
-                cmd.binary += cmd.argument[0].to_bytes(1, "little")
-                cmd.binary += cmd.argument[1].to_bytes(1, "little")
-                noteLength, size = write_variable_length(cmd.argument[2])
-                cmd.binary += noteLength.to_bytes(size, "little")
-            elif cmd.command == "Unknown":
-                cmd.binary += cmd.argument.to_bytes(1, "little")
-            else:
-                try:
-                    cmd.binary += (midiCmdName.index(cmd.command) + 0x80).to_bytes(1, "little")
-                except Exception:
-                    raise ValueError(f"Undefined Command {cmd.command}")
-                if cmd.argument != None:
-                    commandSize = midiCmdArgs[midiCmdName.index(cmd.command)]
-                    if commandSize == -1:
-                        noteLength, size = write_variable_length(int(cmd.argument))
-                        cmd.binary += noteLength.to_bytes(size, "little")
-                    else:
-                        cmd.binary += int(cmd.argument).to_bytes(commandSize, "little")
+            if cmd.channel != channel:
+                if channel > -1:
+                    midiFile.write(b'\x00\xFF\x2F\x00')
+                channel = cmd.channel
+                midiFile.write(b'MTrk')
+                midiFile.write((channelSize[channel] + 4).to_bytes(4, "big"))
             midiFile.write(cmd.binary)
-        midiFile.write(b'\x00' * (midiSize - (headerSize + 0x1C + seq.size)))
+        midiFile.write(b'\x00\xFF\x2F\x00')

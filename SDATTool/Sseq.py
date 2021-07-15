@@ -205,7 +205,7 @@ def read_sseq(sdat):
         if command in (0x94, 0xFD, 0xFF):  # Only look for channel changes when the last command was Jump, Return, or End
             for i, track in enumerate(seq.trackOffset):
                 if track > -1:
-                    if sdat.pos >= track:
+                    if (sdat.pos - sseqOffset) >= track:
                         channel = i
                         location = 0
         command = sdat.data[sdat.pos]
