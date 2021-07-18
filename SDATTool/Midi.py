@@ -24,68 +24,20 @@ midiCmdName = (
     "Controller",
     "Instrument",
     "AfterTouch2",  # temporary
-    "mPitchBend",
+    "_PitchBend",
     "Sys"
 )
 
 
 midiController = (
-    "NoteOff",
-    "Note",
-    "AfterTouch",
-    "Controller",
-    "Instrument",
-    "AfterTouch2",  # temporary
-    "mPitchBend",
-    "Sys"
-)
-
-
-midiCmdArgs = (  # -1 for variable length
-    -1,  # 0x80
-    -1,  # 0x81
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0,
-    4,  # 0x93
-    3,  # 0x94
-    3,  # 0x95
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    1,  # 0xC0
-    1,  # 0xC1
-    1,  # 0xC2
-    1,  # 0xC3
-    1,  # 0xC4
-    1,  # 0xC5
-    1,  # 0xC6
-    1,  # 0xC7
-    1,  # 0xC8
-    1,  # 0xC9
-    1,  # 0xCA
-    1,  # 0xCB
-    1,  # 0xCC
-    1,  # 0xCD
-    1,  # 0xCE
-    1,  # 0xCF
-    1,  # 0xD0
-    1,  # 0xD1
-    1,  # 0xD2
-    1,  # 0xD3
-    1,  # 0xD4
-    1,  # 0xD5
-    1,  # 0xD6
-    0, 0, 0, 0, 0, 0, 0, 0, 0,
-    2,  # 0xE0
-    2,  # 0xE1
-    0,
-    2,  # 0xE3
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0,
-    0,  # 0xFC
-    0,  # 0xFD
-    2,  # 0xFE
-    0  # 0xFF
+    "", "", "", "", "", "PortamentoTime", "PitchBendRange", "Volume", "", "", "Pan", "Expression", "", "", "", "",
+    "", "", "", "", "MasterVolume", "Transpose", "Priority", "Tie", "ModDepth", "ModSpeed", "ModType", "ModRange", "", "", "", "",
+    "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "",
+    "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "",
+    "", "PortamentoOnOff", "", "", "", "", "", "", "", "", "", "", "", "", "", "",
+    "", "", "", "", "PortamentoControl", "Attack", "Decay", "Sustain", "Release", "", "", "", "", "", "", "",
+    "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "",
+    "", "", "", "", "", "", "", ""
 )
 
 
@@ -136,37 +88,11 @@ def write_sseq_to_midi(seq, args, fName):
         cmd = seq.commands[i]
         if cmd.channel != channel:
             channel = cmd.channel
-            location = 0
             lastDelay = 0
-        if cmd.command == "Delay":
-            lastDelay += cmd.argument
-        else:
-            noteLength, size = write_variable_length(lastDelay)
-            seq.commands[i].binary += noteLength.to_bytes(size, "little")
-            lastDelay = 0
+            pitchBend = 0
+        if cmd.command != 'Delay':
             if cmd.command == 'Note':  # Unrolling the song should happen before adding the note off commands
-                length = cmd.argument[2]
-                id = i + 1
-                try:
-                    while length:
-                        if seq.commands[id].command == "Delay":
-                            length -= seq.commands[id].argument
-                            if length < 0:
-                                seq.commands[id].argument += length
-                                seq.commands.insert(id + 1, SSEQCommand(channel, location, seq.commands[id].position, "Delay", -length))
-                                fix_label_pointers(id + 1, seq)
-                                length = 0
-                        id += 1
-                    seq.commands.insert(id, SSEQCommand(channel, location, cmd.position, "NoteOff", [cmd.argument[0], 0]))
-                    fix_label_pointers(id, seq)
-                    seq.commands[i].binary += (channel + 0x90).to_bytes(1, "big")
-                    seq.commands[i].binary += cmd.argument[0].to_bytes(1, "big")
-                    seq.commands[i].binary += cmd.argument[1].to_bytes(1, "big")
-                except Exception:
-                    del seq.commands[i].binary
-                    seq.commands[i].binary = bytearray()
-            elif cmd.command == 'NoteOff':
-                seq.commands[i].binary += (channel + 0x80).to_bytes(1, "big")
+                seq.commands[i].binary += (channel + 0x90).to_bytes(1, "big")
                 seq.commands[i].binary += cmd.argument[0].to_bytes(1, "big")
                 seq.commands[i].binary += cmd.argument[1].to_bytes(1, "big")
             elif cmd.command in midiCmdName:
@@ -175,6 +101,24 @@ def write_sseq_to_midi(seq, args, fName):
             elif cmd.command in midiController:
                 seq.commands[i].binary += (channel + 0xB0).to_bytes(1, "big")
                 seq.commands[i].binary += midiController.index(cmd.command).to_bytes(1, "big")
+                seq.commands[i].binary += cmd.argument.to_bytes(1, "big")
+            elif cmd.command == 'PitchBend':
+                seq.commands[i].binary += (channel + 0xE0).to_bytes(1, "big")
+                pitchBend = (cmd.argument + 0x80) & 0xFF
+                seq.commands[i].binary += ((pitchBend << 7) & 0x7F).to_bytes(1, "little")
+                seq.commands[i].binary += (pitchBend >> 1).to_bytes(1, "little")
+            elif cmd.command == 'Tempo':
+                seq.commands[i].binary += b'\xFF\x51\x03'
+                seq.commands[i].binary += int(60000000 / cmd.argument).to_bytes(3, "big")
+            elif cmd.command == 'Poly':
+                seq.commands[i].binary += (channel + 0xB0).to_bytes(1, "big")
+                if cmd.argument:  # Mono mode
+                    seq.commands[i].binary += b'\x7E'
+                    seq.commands[i].binary += channel.to_bytes(1, "big")
+                    seq.commands[i].binary += b'\x01'
+                else:  # Poly mode
+                    seq.commands[i].binary += b'\x7F'
+                    seq.commands[i].binary += channel.to_bytes(1, "big")
             else:
                 seq.commands[i].binary += b'\xFF\x01'
                 if cmd.argument != None:
@@ -188,31 +132,80 @@ def write_sseq_to_midi(seq, args, fName):
         i += 1
 
     channel = -1
+    commandOrder = []
     midiData = bytearray()
     chStart = [-1] * 16
     chEnd = [-1] * 16
     channelPointers = list(i for i in seq.trackOffset if i > -1)
     chPointerID = 0
+    activeNotes = []
     i = 0
     while i < len(seq.commands):
         cmd = seq.commands[i]
-        if cmd.channel != channel:             
+        if cmd.command == "Delay":
+            delayLeft = thisDelay = cmd.argument
+            notesOn = list(n for n in activeNotes if n[0] > -1)
+            notesOn.sort()
+            for id, note in enumerate(notesOn):
+                if note[0] <= delayLeft:
+                    delay = note[0]
+                    for n in range(id, len(notesOn)):
+                        notesOn[n][0] -= delay
+                    commandOrder.append(len(seq.commands))
+                    seq.commands.append(SSEQCommand(channel, None, None, "Delay", delay))
+                    delayLeft -= delay
+                if note[0] == 0:
+                    commandOrder.append(len(seq.commands))
+                    seq.commands.append(SSEQCommand(channel, None, None, "NoteOff", [note[1], note[2]]))
+                    seq.commands[-1].binary += (channel + 0x80).to_bytes(1, "big")
+                    seq.commands[-1].binary += note[1].to_bytes(1, "big")
+                    seq.commands[-1].binary += note[2].to_bytes(1, "big")
+            commandOrder.append(len(seq.commands))
+            seq.commands.append(SSEQCommand(channel, None, None, "Delay", delayLeft - thisDelay)) # this will be <=0
+            id = 0
+            while id < len(activeNotes):
+                activeNotes[id][0] -= delayLeft
+                if activeNotes[id][0] <= 0:
+                    del activeNotes[id]
+                else:
+                    id +=1
+
+        if cmd.channel != channel:  
+            notesOn = list(n for n in activeNotes if n[0] > -1)
+            notesOn.sort()
+            for id, note in enumerate(notesOn):
+                delay = note[0]
+                for n in range(id, len(notesOn)):
+                    notesOn[n][0] -= delay
+                commandOrder.append(len(seq.commands))
+                seq.commands.append(SSEQCommand(channel, None, None, "Delay", delay))
+                commandOrder.append(len(seq.commands))
+                seq.commands.append(SSEQCommand(channel, None, None, "NoteOff", [note[1], note[2]]))
+                seq.commands[-1].binary += (channel + 0x80).to_bytes(1, "big")
+                seq.commands[-1].binary += note[1].to_bytes(1, "big")
+                seq.commands[-1].binary += note[2].to_bytes(1, "big")
+            if channel > -1:
+                commandOrder.append(len(seq.commands))
+                seq.commands.append(SSEQCommand(channel, None, None, "TrackEnd", None))
+                seq.commands[-1].binary = b'\xFF\x2F\x00'
+                chEnd[channel] = len(commandOrder)
             channel = cmd.channel
             returnLoc = 0
-            chStart[channel] = len(midiData)
-        midiData += cmd.binary
-        if cmd.command == "Call":
+            chStart[channel] = len(commandOrder)
+            del activeNotes
+            activeNotes = []
+            
+        commandOrder.append(i)
+        if cmd.command == "Note":
+            activeNotes.append([cmd.argument[2], cmd.argument[0], cmd.argument[1]])
+        elif cmd.command == "Call":
             returnLoc = i
             i = seq.labelPosition[seq.labelName.index(cmd.argument)] - 1
-            cmd = seq.commands[i]
         elif cmd.command == "Return":
             if returnLoc:
                 i = returnLoc
                 returnLoc = 0
-                cmd = seq.commands[i]
         elif cmd.command == "TrackEnd":
-            midiData += b'\x00\xFF\x2F\x00'
-            chEnd[channel] = len(midiData)
             chPointerID += 1
             if chPointerID < len(channelPointers):
                 i = channelPointers[chPointerID] - 1
@@ -220,11 +213,44 @@ def write_sseq_to_midi(seq, args, fName):
                 i = len(seq.commands)
         i += 1
 
+
+    notesOn = list(n for n in activeNotes if n[0] > -1)
+    notesOn.sort()
+    for id, note in enumerate(notesOn):
+        delay = note[0]
+        for n in range(id, len(notesOn)):
+            notesOn[n][0] -= delay
+        commandOrder.append(len(seq.commands))
+        seq.commands.append(SSEQCommand(channel, None, None, "Delay", delay))
+        commandOrder.append(len(seq.commands))
+        seq.commands.append(SSEQCommand(channel, None, None, "NoteOff", [note[1], note[2]]))
+        seq.commands[-1].binary += (channel + 0x80).to_bytes(1, "big")
+        seq.commands[-1].binary += note[1].to_bytes(1, "big")
+        seq.commands[-1].binary += note[2].to_bytes(1, "big")
+    if channel > -1:
+        commandOrder.append(len(seq.commands))
+        seq.commands.append(SSEQCommand(channel, None, None, "TrackEnd", None))
+        seq.commands[-1].binary = b'\xFF\x2F\x00'
+        chEnd[channel] = len(commandOrder)
+
+    chStartMidi = [-1] * 16
+    chEndMidi = [-1] * 16
     testPath = f"{args.folder}/Files/{itemString[SEQ]}/{fName}.mid"
     with open(testPath, "wb") as midiFile:
         midiFile.write(midiHeader)
         for channel in range(16):
-            if chStart[channel] > -1:
+            if chStart[channel] != chEnd[channel]:
+                chStartMidi[channel] = len(midiData)
+                lastDelay = 0
+                for i in commandOrder[chStart[channel]:chEnd[channel]]:
+                    if len(seq.commands[i].binary):
+                        noteLength, size = write_variable_length(lastDelay)
+                        midiData += noteLength.to_bytes(size, "little")
+                        midiData += seq.commands[i].binary
+                        lastDelay = 0
+                    elif seq.commands[i].command == "Delay":
+                        lastDelay += seq.commands[i].argument
+                chEndMidi[channel] = len(midiData)
                 midiFile.write(b'MTrk')
-                midiFile.write(len(midiData[chStart[channel]:chEnd[channel]]).to_bytes(4, "big"))
-                midiFile.write(midiData[chStart[channel]:chEnd[channel]])
+                midiFile.write(len(midiData[chStartMidi[channel]:chEndMidi[channel]]).to_bytes(4, "big"))
+                midiFile.write(midiData[chStartMidi[channel]:chEndMidi[channel]])
