@@ -81,7 +81,6 @@ def write_sseq_to_midi(seq, args, fName):
     midiHeader += seq.trackCount.to_bytes(2, byteorder='big')  # track count
     midiHeader += b'\x00\x30'  # delta-time
 
-    # write to byte arrays in commands, while calculating track length
     channel = -1
     i = 0
     while i < len(seq.commands):
@@ -91,7 +90,7 @@ def write_sseq_to_midi(seq, args, fName):
             lastDelay = 0
             pitchBend = 0
         if cmd.command != 'Delay':
-            if cmd.command == 'Note':  # Unrolling the song should happen before adding the note off commands
+            if cmd.command == 'Note':
                 seq.commands[i].binary += (channel + 0x90).to_bytes(1, "big")
                 seq.commands[i].binary += cmd.argument[0].to_bytes(1, "big")
                 seq.commands[i].binary += cmd.argument[1].to_bytes(1, "big")
@@ -119,6 +118,12 @@ def write_sseq_to_midi(seq, args, fName):
                 else:  # Poly mode
                     seq.commands[i].binary += b'\x7F'
                     seq.commands[i].binary += channel.to_bytes(1, "big")
+            elif cmd.command == 'Call':
+                seq.commands[i].binary += b'\xFF\x01\x01'
+                seq.commands[i].binary += bytes("{", 'utf-8')
+            elif cmd.command == 'Return':
+                seq.commands[i].binary += b'\xFF\x01\x01'
+                seq.commands[i].binary += bytes("}", 'utf-8')
             else:
                 seq.commands[i].binary += b'\xFF\x01'
                 if cmd.argument != None:
@@ -142,6 +147,13 @@ def write_sseq_to_midi(seq, args, fName):
     i = 0
     while i < len(seq.commands):
         cmd = seq.commands[i]
+        if i in seq.labelPosition:
+            commandOrder.append(len(seq.commands))
+            seq.commands.append(SSEQCommand(cmd.channel, None, None, "Label", seq.labelName[seq.labelPosition.index(i)]))
+            seq.commands[-1].binary += b'\xFF\x01'
+            noteLength, size = write_variable_length(len(f"{seq.labelName[seq.labelPosition.index(i)]}"))
+            seq.commands[-1].binary += noteLength.to_bytes(size, "little")
+            seq.commands[-1].binary += bytes(f"{seq.labelName[seq.labelPosition.index(i)]}", 'utf-8')
         if cmd.command == "Delay":
             delayLeft = thisDelay = cmd.argument
             notesOn = list(n for n in activeNotes if n[0] > -1)
