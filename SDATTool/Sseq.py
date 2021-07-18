@@ -51,7 +51,7 @@ sseqCmdName = (
     "Priority",  # 0xC6
     "Poly",  # 0xC7
     "Tie",  # 0xC8
-    "PortamentoControll",  # 0xC9
+    "PortamentoControl",  # 0xC9
     "ModDepth",  # 0xCA
     "ModSpeed",  # 0xCB
     "ModType",  # 0xCC
@@ -193,7 +193,7 @@ def read_sseq(sdat):
         sdat.pos += 5
         command = sdat.data[sdat.pos]
 
-    channel = 0
+    channel = -1
     sseqStart = sdat.pos - sseqFilePos
     sseqOffset = sdat.pos
     for i, offset in enumerate(seq.trackOffset):
@@ -204,7 +204,7 @@ def read_sseq(sdat):
     while sdat.pos < sseqEnd:
         if command in (0x94, 0xFD, 0xFF):  # Only look for channel changes when the last command was Jump, Return, or End
             for i, track in enumerate(seq.trackOffset):
-                if track > -1:
+                if track > -1 and i > channel:
                     if (sdat.pos - sseqOffset) >= track:
                         channel = i
                         location = 0
@@ -263,7 +263,7 @@ def read_sseq(sdat):
                 seq.commands.append(SSEQCommand(channel, location, (sdat.pos - sseqOffset) - 1, "Note", [command, sdat.data[sdat.pos], commandArg]))
                 sdat.pos += commandArgLen
                 seq.size = (sdat.pos - sseqOffset)
-    sdat.pos = sseqFilePos
+    sdat.pos = sseqFilePos - 0x1C
     for i, cmd in enumerate(seq.commands):
         if cmd.position in seq.labelPosition:
             seq.labelPosition[seq.labelPosition.index(cmd.position)] = i
