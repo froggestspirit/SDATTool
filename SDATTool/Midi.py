@@ -41,6 +41,18 @@ midiController = (
 )
 
 
+def read_long(midiData, pos):
+    return int.from_bytes(midiData[pos:pos + 4], 'big')
+
+
+def read_short(midiData, pos):
+    return int.from_bytes(midiData[pos:pos + 2], 'big')
+
+
+def read_byte(midiData, pos):
+    return int.from_bytes(midiData[pos:pos + 1], 'big')
+
+
 def variable_length_size(length):
     commandSize = 1
     for i in range(3):
@@ -225,7 +237,6 @@ def write_sseq_to_midi(seq, args, fName):
                 i = len(seq.commands)
         i += 1
 
-
     notesOn = list(n for n in activeNotes if n[0] > -1)
     notesOn.sort()
     for id, note in enumerate(notesOn):
@@ -266,3 +277,34 @@ def write_sseq_to_midi(seq, args, fName):
                 midiFile.write(b'MTrk')
                 midiFile.write(len(midiData[chStartMidi[channel]:chEndMidi[channel]]).to_bytes(4, "big"))
                 midiFile.write(midiData[chStartMidi[channel]:chEndMidi[channel]])
+
+
+def read_sseq_from_midi(args, fName):
+    testPath = f"{args.folder}/Files/{itemString[SEQ]}/{fName[:-5]}.mid"
+    if not os.path.exists(testPath):
+        raise Exception(f"Missing File:{testPath}")
+    with open(testPath, "rb") as midiFile:
+        midiData = bytearray(midiFile.read())
+    seq = Sequence()
+    if midiData[0:8] != b'MThd\x00\x00\x00\x06':
+        raise ValueError("Not a valid midi header")
+    if midiData[8:10] != b'\x00\x01':
+        raise ValueError("Only Midi type 1 is supported")
+    seq.trackCount = read_short(midiData, 10)
+    timeDivision = read_short(midiData, 12)
+    midiPos = 14
+    trackSize = [-1] * 16
+    trackStart = [-1] * 16
+    trackEnd = [-1] * 16
+    for ch in range(seq.trackCount):
+        if midiData[midiPos:midiPos + 4] != b'MTrk':
+            raise ValueError("Not a valid midi track header")
+        midiPos += 4
+        trackSize[ch] = read_long(midiData, midiPos)
+        midiPos += 4
+        trackStart[ch] = midiPos
+        trackEnd[ch] = midiPos + trackSize[ch]
+        while midiPos < trackEnd[ch]:
+            midiPos += 1
+
+    return seq
