@@ -186,6 +186,9 @@ def read_sseq(sdat):
     else:
         seq.tracksUsed = 1
         seq.trackCount = 1
+        if sdat.pos == sseqEnd:
+            seq.tracksUsed = 0
+            seq.trackCount = 0
     command = sdat.data[sdat.pos]
     while command == 0x93:  # Track Pointer
         trackInfo = read_long(sdat, pos=sdat.pos + 1)
@@ -359,6 +362,34 @@ def read_sseq_from_txt(args, fName):
 
 
 def write_sseq(seq, args, fName):
+    position = 0
+    for cmd in seq.commands:  # fix positions and convert to binary
+        cmd.position = position
+        if cmd.command not in ("Jump", "Call"):
+            if cmd.command == "Note":
+                cmd.binary += cmd.argument[0].to_bytes(1, "little")
+                cmd.binary += cmd.argument[1].to_bytes(1, "little")
+                noteLength, size = write_variable_length(cmd.argument[2])
+                cmd.binary += noteLength.to_bytes(size, "little")
+            elif cmd.command == "Unknown":
+                cmd.binary += cmd.argument.to_bytes(1, "little")
+            else:
+                try:
+                    cmd.binary += (sseqCmdName.index(cmd.command) + 0x80).to_bytes(1, "little")
+                except Exception:
+                    raise ValueError(f"Undefined Command {cmd.command}")
+                if cmd.argument != None:
+                    commandSize = sseqCmdArgs[sseqCmdName.index(cmd.command)]
+                    if commandSize == -1:
+                        noteLength, size = write_variable_length(int(cmd.argument))
+                        cmd.binary += noteLength.to_bytes(size, "little")
+                    else:
+                        cmd.binary += int(cmd.argument).to_bytes(commandSize, "little")
+            position += len(cmd.binary)
+        else:  # hardcode the size of jump/call since it will be converted to binary last
+            position += 4
+    seq.size = position
+
     headerSize = 0
     if seq.trackCount > 1:
         headerSize += 3 + ((seq.trackCount - 1) * 5)
@@ -383,20 +414,13 @@ def write_sseq(seq, args, fName):
     testPath = f"{args.folder}/Files/{itemString[SEQ]}/{fName}"
     with open(testPath, "wb") as sseqFile:
         sseqFile.write(sseqHeader)
+
         for cmd in seq.commands:  # fix label pointers
             if cmd.command in ("Jump", "Call"):
                 if cmd.argument in seq.labelName:
                     cmd.argument = seq.commands[seq.labelPosition[seq.labelName.index(cmd.argument)]].position + headerSize
                 else:
                     raise ValueError(f"Label \"{cmd.argument}\" is not defined")
-            if cmd.command == "Note":
-                cmd.binary += cmd.argument[0].to_bytes(1, "little")
-                cmd.binary += cmd.argument[1].to_bytes(1, "little")
-                noteLength, size = write_variable_length(cmd.argument[2])
-                cmd.binary += noteLength.to_bytes(size, "little")
-            elif cmd.command == "Unknown":
-                cmd.binary += cmd.argument.to_bytes(1, "little")
-            else:
                 try:
                     cmd.binary += (sseqCmdName.index(cmd.command) + 0x80).to_bytes(1, "little")
                 except Exception:

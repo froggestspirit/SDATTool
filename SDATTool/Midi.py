@@ -1,7 +1,7 @@
 import os
 from const import itemString
 from util import read_long, read_short
-from Sseq import seqNote, Sequence, SSEQCommand
+from Sseq import seqNote, Sequence, SSEQCommand, sseqCmdName
 
 LONG = -4
 SHORT = -2
@@ -51,6 +51,16 @@ def read_short(midiData, pos):
 
 def read_byte(midiData, pos):
     return int.from_bytes(midiData[pos:pos + 1], 'big')
+
+
+def read_variable_length(midiData, pos):
+    retVal = (int.from_bytes(midiData[pos:pos + 1], 'big') & 0x7F)
+    for i in range(3):
+        if (int.from_bytes(midiData[pos:pos + 1], 'big') & 0x80):
+            pos += 1
+            retVal = (retVal << 7) + (int.from_bytes(midiData[pos:pos + 1], 'big') & 0x7F)
+    pos += 1
+    return retVal, pos
 
 
 def variable_length_size(length):
@@ -116,7 +126,7 @@ def write_sseq_to_midi(seq, args, fName):
             elif cmd.command == 'PitchBend':
                 seq.commands[i].binary += (channel + 0xE0).to_bytes(1, "big")
                 pitchBend = (cmd.argument + 0x80) & 0xFF
-                seq.commands[i].binary += ((pitchBend << 7) & 0x7F).to_bytes(1, "little")
+                seq.commands[i].binary += ((pitchBend << 6) & 0x7F).to_bytes(1, "little")
                 seq.commands[i].binary += (pitchBend >> 1).to_bytes(1, "little")
             elif cmd.command == 'Tempo':
                 seq.commands[i].binary += b'\xFF\x51\x03'
@@ -272,6 +282,12 @@ def write_sseq_to_midi(seq, args, fName):
                         midiData += seq.commands[i].binary
                         lastDelay = 0
                     elif seq.commands[i].command == "Delay":
+                        if lastDelay > 0:
+                            if seq.commands[i].argument > 0:
+                                noteLength, size = write_variable_length(lastDelay)
+                                midiData += noteLength.to_bytes(size, "little")
+                                midiData += b"\xFF\x01\x05Dummy"
+                                lastDelay = 0
                         lastDelay += seq.commands[i].argument
                 chEndMidi[channel] = len(midiData)
                 midiFile.write(b'MTrk')
@@ -304,7 +320,176 @@ def read_sseq_from_midi(args, fName):
         midiPos += 4
         trackStart[ch] = midiPos
         trackEnd[ch] = midiPos + trackSize[ch]
+        location = 0
+        activeNotes = []
+        thisTrackStart = len(seq.commands)
+        thisCh = 0
+        endEarly = None
         while midiPos < trackEnd[ch]:
-            midiPos += 1
+            delay, midiPos = read_variable_length(midiData, midiPos)
+            if delay:  # write delay command
+                if seq.commands[-1].command == "Delay":
+                    seq.commands[-1].argument += delay
+                else:
+                    seq.commands.append(SSEQCommand(ch, location, 0, "Delay", delay))
+                location += delay
 
-    return seq
+            command = read_byte(midiData, midiPos)
+            midiPos += 1
+            commandType = command & 0xF0
+            if commandType == 0x90:  # Note on
+                thisCh = command & 0x0F
+                note = read_byte(midiData, midiPos)
+                midiPos += 1
+                vel = read_byte(midiData, midiPos)
+                midiPos += 1
+                if vel:
+                    activeNotes.append([note, len(seq.commands)])  # store the note's command index, to update it when note off is triggered
+                    seq.commands.append(SSEQCommand(ch, location, 0, "Note", [note, vel, 0]))
+                else:
+                    id = 0
+                    while id < len(activeNotes):
+                        if note == activeNotes[id][0]:
+                            seq.commands[activeNotes[id][1]].argument[2] = location - seq.commands[activeNotes[id][1]].location
+                            del activeNotes[id]
+                            break
+            elif commandType == 0x80:  # Note off
+                note = read_byte(midiData, midiPos)
+                midiPos += 1
+                vel = read_byte(midiData, midiPos)
+                midiPos += 1
+                id = 0
+                while id < len(activeNotes):
+                    if note == activeNotes[id][0]:
+                        seq.commands[activeNotes[id][1]].argument[2] = location - seq.commands[activeNotes[id][1]].location
+                        del activeNotes[id]
+                        break
+                    id += 1
+            elif command == 0xFF:
+                metaCommand = read_byte(midiData, midiPos)
+                midiPos += 1
+                metaLength = read_byte(midiData, midiPos)
+                midiPos += 1
+                if metaCommand == 0x2F:
+                    seq.commands.append(SSEQCommand(ch, location, 0, "TrackEnd", None))
+                    break
+                elif metaCommand == 0x51:  # Tempo
+                    tempo = int(60000000 / (read_long(midiData, midiPos) >> 8))
+                    seq.commands.append(SSEQCommand(ch, location, 0, "Tempo", tempo))
+                elif metaCommand == 0x01:
+                    textCommand = midiData[midiPos:midiPos + metaLength].decode("utf-8")
+                    if textCommand == "{":  # mark a subroutine, the following command needs to be a label
+                        midiPos += metaLength
+                        delay = read_byte(midiData, midiPos)
+                        midiPos += 1
+                        command = read_byte(midiData, midiPos)
+                        midiPos += 1
+                        metaCommand = read_byte(midiData, midiPos)
+                        midiPos += 1
+                        metaLength = read_byte(midiData, midiPos)
+                        midiPos += 1
+                        if delay == 0x00 and command == 0xFF and metaCommand == 0x01:
+                            textCommand = midiData[midiPos:midiPos + metaLength].decode("utf-8")
+                            if textCommand[:6] == "Label_":
+                                seq.commands.append(SSEQCommand(ch, location, 0, "Call", textCommand))
+                            else:
+                                raise ValueError(f"Opening bracket is not followed by a label: {fName} at {midiPos}")
+                        else:
+                            raise ValueError(f"Opening bracket is not followed by a label: {fName} at {midiPos}")
+                    elif textCommand == "}":
+                        seq.commands.append(SSEQCommand(ch, location, 0, "Return", None))
+                    # Check for labels, add them to label array
+                    elif textCommand[:6] == "Label_":
+                        if textCommand not in seq.labelName:
+                            seq.labelName.append(textCommand)
+                            seq.labelPosition.append(len(seq.commands))
+                            seq.commands.append(SSEQCommand(ch, location, 0, "Dummy", None))  # Add to prevent merging delays
+                    elif textCommand == "TrackEnd":
+                        seq.commands.append(SSEQCommand(ch, location, 0, "TrackEnd", None))
+                        endEarly = len(seq.commands)  # Mark where the end of the track should truly be, but continue (look for note ends)
+                    else:
+                        textCommand = textCommand.split("|")
+                        if textCommand[0] in sseqCmdName:
+                            if len(textCommand) > 1:
+                                seq.commands.append(SSEQCommand(ch, location, 0, textCommand[0], textCommand[1]))
+                            else:
+                                seq.commands.append(SSEQCommand(ch, location, 0, textCommand[0], None))
+                        elif textCommand[0] == "Unknown":
+                            seq.commands.append(SSEQCommand(ch, location, 0, "Unknown", int(textCommand[1])))
+                        elif textCommand[0] == "Dummy":
+                            seq.commands.append(SSEQCommand(ch, location, 0, "Dummy", None))  # Add to prevent merging delays
+
+                midiPos += metaLength
+            elif commandType == 0xB0:
+                thisCh = command & 0x0F
+                controllerCmd = read_byte(midiData, midiPos)
+                midiPos += 1
+                if controllerCmd == 0x7E:
+                    midiPos += 1
+                    seq.commands.append(SSEQCommand(ch, location, 0, "Poly", 1))
+                elif controllerCmd == 0x7F:
+                    seq.commands.append(SSEQCommand(ch, location, 0, "Poly", 0))
+                else:
+                    seq.commands.append(SSEQCommand(ch, location, 0, midiController[controllerCmd], read_byte(midiData, midiPos)))
+                midiPos += 1
+            elif commandType == 0xE0:
+                thisCh = command & 0x0F
+                pitchBend = read_byte(midiData, midiPos) >> 6
+                pitchBend += read_byte(midiData, midiPos + 1) << 1
+                pitchBend = (pitchBend + 0x80) & 0xFF
+                midiPos += 2
+                seq.commands.append(SSEQCommand(ch, location, 0, "PitchBend", pitchBend))
+            else:
+                thisCh = command & 0x0F
+                seq.commands.append(SSEQCommand(ch, location, 0, midiCmdName[(commandType >> 4) - 8], read_byte(midiData, midiPos)))
+                midiPos += 1
+        seq.trackOffset[thisCh] = thisTrackStart
+        seq.tracksUsed |= 1 << thisCh
+        if endEarly:
+            del seq.commands[endEarly:]
+
+    seq2 = Sequence()
+    chAdjust = 0
+    for ch in range(16):
+        if (1 << ch) & seq.tracksUsed:
+            readingSub = False
+            subroutine = []
+            seq.trackOffset[ch] = len(seq2.commands)
+            for i, cmd in enumerate(seq.commands):  # reorder and handle subroutines
+                if cmd.channel == chAdjust:
+                    if i in seq.labelPosition:
+                        seq.labelPosition[seq.labelPosition.index(i)] = len(seq2.commands)
+                    if cmd.command == "Call":
+                        seq2.commands.append(SSEQCommand(ch, cmd.location, 0, "Call", cmd.argument))
+                        readingSub = True
+                        if cmd.argument not in list(s[1] for s in subroutine):
+                            subroutine.append([i, cmd.argument])
+                    elif cmd.command == "Return":
+                        readingSub = False
+                    elif cmd.command == "Dummy":
+                        pass  # ignore dummy commands
+                    elif not readingSub:
+                        seq2.commands.append(SSEQCommand(ch, cmd.location, 0, cmd.command, cmd.argument))
+            subroutine.sort()
+            for sub in subroutine:
+                done = False
+                i = sub[0]
+                seq.labelName.append(sub[1])
+                seq.labelPosition.append(len(seq2.commands))
+                while not done:
+                    cmd = seq.commands[i]
+                    if cmd.channel == chAdjust:
+                        if cmd.command not in ("Call", "Dummy"):
+                            if cmd.command == "Return":
+                                done = True
+                            seq2.commands.append(SSEQCommand(ch, cmd.location, 0, cmd.command, cmd.argument))
+                    i += 1
+            chAdjust += 1
+            del subroutine
+    seq2.commands.append(SSEQCommand(ch, location, 0, "TrackEnd", None))
+    seq2.tracksUsed = seq.tracksUsed
+    seq2.labelPosition = seq.labelPosition
+    seq2.labelName = seq.labelName
+    seq2.trackOffset = seq.trackOffset
+    seq2.trackCount = seq.trackCount
+    return seq2
