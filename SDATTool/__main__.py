@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 # SDAT-Tool by FroggestSpirit
-version = "1.3.0"
+version = "1.4.0"
 # Unpacks and builds SDAT files
 # Make backups, this can overwrite files without confirmation
 

@@ -36,6 +36,10 @@ Un-edited rebuilt SDAT files should be 1:1, if an SDAT is ripped from a game, de
 To make better use of the -or option, first unpack a SDAT, then re-build it with -or. After, unpack that new SDAT, and rebuild that new one with -o
 
 
+New in version 1.4.0:
+
+-SSEQ files now convert to MIDI and back. This should be a 1:1 conversion, but was only tested on a couple SDAT files
+
 New in version 1.3.0:
 
 -Code cleanup/organization
