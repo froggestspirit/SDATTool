@@ -96,9 +96,12 @@ def fix_label_pointers(id, seq):
 
 
 def write_sseq_to_midi(seq, args, fName):
+    if not seq:
+        return False
     '''print(f"{fName}")  # uncomment for debug print (will print every sseq it's building, beware)
     for cmd in seq.commands:
         print(f"{cmd.__dict__}")'''
+    trackEndCount = 0
     midiHeader = bytearray()
     midiHeader += b'MThd'  # Header
     midiHeader += b'\x00\x00\x00\x06'  # header chunk size
@@ -225,6 +228,7 @@ def write_sseq_to_midi(seq, args, fName):
                 commandOrder.append(len(seq.commands))
                 seq.commands.append(SSEQCommand(channel, None, None, "TrackEnd", None))
                 seq.commands[-1].binary = b'\xFF\x2F\x00'
+                trackEndCount += 1
                 chEnd[channel] = len(commandOrder)
             channel = cmd.channel
             returnLoc = 0
@@ -267,6 +271,7 @@ def write_sseq_to_midi(seq, args, fName):
         commandOrder.append(len(seq.commands))
         seq.commands.append(SSEQCommand(channel, None, None, "TrackEnd", None))
         seq.commands[-1].binary = b'\xFF\x2F\x00'
+        trackEndCount += 1
         chEnd[channel] = len(commandOrder)
 
     chStartMidi = [-1] * 16
@@ -296,6 +301,7 @@ def write_sseq_to_midi(seq, args, fName):
                 midiFile.write(b'MTrk')
                 midiFile.write(len(midiData[chStartMidi[channel]:chEndMidi[channel]]).to_bytes(4, "big"))
                 midiFile.write(midiData[chStartMidi[channel]:chEndMidi[channel]])
+    return trackEndCount == seq.trackCount
 
 
 def read_sseq_from_midi(args, fName):
@@ -306,7 +312,7 @@ def read_sseq_from_midi(args, fName):
         midiData = bytearray(midiFile.read())
     seq = Sequence()
     if midiData[0:8] != b'MThd\x00\x00\x00\x06':
-        raise ValueError("Not a valid midi header")
+        raise ValueError(f"{fName}: Not a valid midi header")
     if midiData[8:10] != b'\x00\x01':
         raise ValueError("Only Midi type 1 is supported")
     seq.trackCount = read_short(midiData, 10)
@@ -317,7 +323,7 @@ def read_sseq_from_midi(args, fName):
     trackEnd = [-1] * 16
     for ch in range(seq.trackCount):
         if midiData[midiPos:midiPos + 4] != b'MTrk':
-            raise ValueError("Not a valid midi track header")
+            raise ValueError(f"{fName}: Not a valid midi track header")
         midiPos += 4
         trackSize[ch] = read_long(midiData, midiPos)
         midiPos += 4
