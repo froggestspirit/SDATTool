@@ -46,8 +46,8 @@ sseqCmdName = (
     "", "", "",
     "", "", "", "", "", "", "", "", "", "",
     "UNKNxB0",
-    "", "", "", "", "",
-    "", "", "", "", "", "", "", "", "", "",
+    "UNKNxB1", "UNKNxB2", "UNKNxB3", "UNKNxB4", "UNKNxB5",
+    "UNKNxB6", "UNKNxB7", "UNKNxB8", "UNKNxB9", "UNKNxBA", "UNKNxBB", "UNKNxBC", "UNKNxBD", "UNKNxBE", "UNKNxBF",
     "Pan",  # 0xC0
     "Volume",  # 0xC1
     "MasterVolume",  # 0xC2
@@ -99,8 +99,8 @@ sseqCmdArgs = (  # -1 for variable length
     0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     3,  # 0xB0
-    0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    3, 3, 3, 3, 3,  # Are all 0xBx commands 3 byte parameters?
+    3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
     1,  # 0xC0
     1,  # 0xC1
     1,  # 0xC2
@@ -223,7 +223,10 @@ def read_sseq(sdat):
                     if (sdat.pos - sseqOffset) >= track:
                         channel = i
                         location = 0
+        lastCommand = command
         command = sdat.data[sdat.pos]
+        if command == 0x94 and lastCommand == 0xA2:  # conditional jump (causes issues, abort)
+            return None
         sdat.pos += 1
         if command in (0x94, 0x95):  # Jump or Call
             commandArgLen = sseqCmdArgs[command - 0x80]
@@ -431,8 +434,10 @@ def write_sseq(seq, args, fName):
             if cmd.command in ("Jump", "Call"):
                 if cmd.argument in seq.labelName:
                     cmd.argument = seq.commands[seq.labelPosition[seq.labelName.index(cmd.argument)]].position + headerSize
+                elif cmd.argument[:6] == "Track_":
+                    cmd.argument = seq.trackOffset[int(cmd.argument.replace("Track_", "")) - 1] + headerSize
                 else:
-                    raise ValueError(f"Label \"{cmd.argument}\" is not defined")
+                    raise ValueError(f"Label \"{cmd.argument}\" in {fName} is not defined")
                 try:
                     cmd.binary += (sseqCmdName.index(cmd.command) + 0x80).to_bytes(1, "little")
                 except Exception:
