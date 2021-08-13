@@ -96,6 +96,9 @@ def fix_label_pointers(id, seq):
 
 
 def write_sseq_to_midi(seq, args, fName):
+    '''print(f"{fName}")  # uncomment for debug print (will print every sseq it's building, beware)
+    for cmd in seq.commands:
+        print(f"{cmd.__dict__}")'''
     midiHeader = bytearray()
     midiHeader += b'MThd'  # Header
     midiHeader += b'\x00\x00\x00\x06'  # header chunk size
