@@ -40,38 +40,38 @@ To build with different sets of files (new files, or removing files for example)
 
 New in version 1.4.0:
 
--SSEQ files now convert to MIDI and back. This should be a 1:1 conversion, but was only tested on a couple SDAT files
+      -SSEQ files now convert to MIDI and back. This should be a 1:1 conversion, but was only tested on a couple SDAT files
 
 New in version 1.3.0:
 
--Code cleanup/organization
+      -Code cleanup/organization
 
--Raw files no longer extract by default. They can be extracted with the -wr flag
+      -Raw files no longer extract by default. They can be extracted with the -wr flag
 
--SSEQ files are now properly parsed to txt, and compiled back
+      -SSEQ files are now properly parsed to txt, and compiled back
 
 New in version 1.2.2:
 
--Optimize for RAM option now creates only one SWAR per sseq, even if it's bank normally uses more
+      -Optimize for RAM option now creates only one SWAR per sseq, even if it's bank normally uses more
 
 New in version 1.2.1:
 
--Fixes for optimize for RAM option
+      -Fixes for optimize for RAM option
 
 New in version 1.2.0:
 
--Optimize for RAM option
+      -Optimize for RAM option
 
 New in version 1.1.0:
 
--Code cleanup
+      -Code cleanup
 
--Optimize and optimize size flags
+      -Optimize and optimize size flags
 
 New in version 1.0.0:
 
--Code overhull and JSON formatting
+      -Code overhull and JSON formatting
 
--Temporarily removed options to optimize SDAT (They will be the next priority)
+      -Temporarily removed options to optimize SDAT (They will be the next priority)
 
--Fixed SSEQ dumping
+      -Fixed SSEQ dumping
