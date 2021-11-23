@@ -35,6 +35,8 @@ Un-edited rebuilt SDAT files should be 1:1, if an SDAT is ripped from a game, de
 
 To make better use of the -or option, first unpack a SDAT, then re-build it with -or. After, unpack that new SDAT, and rebuild that new one with -o
 
+To build with different sets of files (new files, or removing files for example), the FileBlock.json and InfoBlock.json should be modified appropriately.
+
 
 New in version 1.4.0:
 
