@@ -1,4 +1,5 @@
 SDATTool/__pycache__/
+SDATTool/.vscode/
 test/
 SDATPlay
 *.sdat
