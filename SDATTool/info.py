@@ -40,7 +40,6 @@ class InfoBlockRecord:
     count: int
     offsets: List[int] = None
     records: List[Any] = None
-    symbols: List[str] = None
 
 
 class InfoBlock:
@@ -78,11 +77,10 @@ class InfoBlock:
             self.__dict__[record].offsets = unpack(f"<{'I' * count}", mem_view[:count * 4])
             self.__dict__[record].records = []
             self.__dict__[record].symbols = []
-            for entry in self.__dict__[record].offsets:
+            for i, entry in enumerate(self.__dict__[record].offsets):
                 if info_class:
                     mem_view = memoryview(self.data[entry:entry + calcsize(struct)])
-                    self.__dict__[record].records.append(info_class(*unpack(struct, mem_view)))
-                    self.__dict__[record].symbols.append("")
+                    self.__dict__[record].records.append(info_class(f"{record}_{i:04}", *unpack(struct, mem_view)))
         for i, entry in enumerate(self.group.offsets):  # Unpack the groups
             self.group.records[i].entries = []
             mem_view = memoryview(self.data[entry + 4:])  # Offset and skip the count (should already have it)
@@ -93,12 +91,18 @@ class InfoBlock:
             for record in ("seq", "seqarc", "bank", "wavearc", "strm"):
                     for i in range(self.__dict__[record].count):
                         file_id = self.__dict__[record].records[i].file_id
+                        symb = symb_block.__dict__[record].records[i]
                         if file_id not in self.symbols.keys():
-                            self.symbols[file_id] = symb_block.__dict__[record].records[i]
-                        self.__dict__[record].symbols[i] = symb_block.__dict__[record].records[i]
+                            self.symbols[file_id] = symb
+                        if symb == "":
+                            symb = f"{record}_{i:04}"
+                        self.__dict__[record].records[i].symbol = symb
             for record in ("player", "group", "player2"):
                     for i in range(self.__dict__[record].count):
-                        self.__dict__[record].symbols[i] = symb_block.__dict__[record].records[i]
+                        symb = symb_block.__dict__[record].records[i]
+                        if symb == "":
+                            symb = f"{record}_{i:04}"
+                        self.__dict__[record].records[i].symbol = symb
 
 
     def dump(self, folder:str, symb_block = None):
@@ -112,11 +116,7 @@ class InfoBlock:
                 with open(f"{info_folder}/{record}.json", "w") as outfile:
                     output = []
                     for i in self.__dict__[record].records:
-                        d = i.__dict__.copy()
-                        try:
-                            d["file_id"] = self.symbols[d["file_id"]]
-                        except KeyError:
-                            pass
+                        d = i.format(self)
                         output.append(d)
                     outfile.write(json.dumps(output, indent=4))
         else:

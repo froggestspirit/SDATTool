@@ -37,6 +37,7 @@ class SDAT:
         self.info = None
         self.fat = None
         self.file = None
+        self.parse_header()
 
     def parse_header(self):
         header_struct = "<4sIIHH"
@@ -69,6 +70,8 @@ class SDAT:
         self.file = FileBlock(memoryview(self.view[self.blocks.file_offset:self.blocks.file_offset + self.blocks.file_size]), self.blocks.file_offset)
 
     def dump(self, folder:str):
+        if not self.header:
+            self.parse_header()
         if self.symb:
             self.symb.dump(folder)
         self.info.dump(folder, self.symb)
@@ -219,6 +222,7 @@ class FileBlock:
         if not self.header:
             self.parse_header()
         fat_block.parse_records()
+        file_order = []
         if not info_block:
             for i, file in enumerate(fat_block.records):
                 offset = file.offset - self.offset
@@ -227,14 +231,15 @@ class FileBlock:
                 if suffix not in ("SSEQ", "SSAR", "SBNK", "SWAR", "STRM"):
                     suffix = "bin"
                 os.makedirs(f"{folder}/{suffix}", exist_ok=True)
-                with open(f"{folder}/{suffix}/{i:04}.{suffix}", "wb") as outfile:
+                with open(f"{folder}/{suffix}/{i:04}.{suffix.lower()}", "wb") as outfile:
                     outfile.write(mem_view)
+                file_order.append(f"{suffix}/{i:04}.{suffix.lower()}")
         else:
             for i, file in enumerate(fat_block.records):
-                symbol = None
+                symbol = ""
                 if i in info_block.symbols.keys():
                     symbol = info_block.symbols[i]
-                if not symbol:
+                if symbol == "":
                     symbol = f"{i:04}"
                 offset = file.offset - self.offset
                 mem_view = memoryview(self.data[offset:offset + file.size])
@@ -244,4 +249,7 @@ class FileBlock:
                 os.makedirs(f"{folder}/{suffix}", exist_ok=True)
                 with open(f"{folder}/{suffix}/{symbol}.{suffix.lower()}", "wb") as outfile:
                     outfile.write(mem_view)
-        
+                file_order.append(f"{suffix}/{symbol}.{suffix.lower()}")
+        if file_order:
+            with open(f"{folder}/files.txt", "w") as outfile:
+                outfile.write("\n".join(file_order))

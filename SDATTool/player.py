@@ -1,39 +1,35 @@
 from dataclasses import dataclass
 from struct import *
+from typing import List
 
 
 @dataclass
 class PLAYERInfo:
+    symbol: str
     unknown_1: int
     padding_1: int
     padding_2: int
     padding_3: int
     unknown_2: int
 
+    def format(self, info_block):
+        d = self.__dict__.copy()
+        return d
+
 
 @dataclass
 class PLAYER2Info:
+    symbol: str
     count: int
-    v1: int
-    v2: int
-    v3: int
-    v4: int
-    v5: int
-    v6: int
-    v7: int
-    v8: int
-    v9: int
-    v10: int
-    v11: int
-    v12: int
-    v13: int
-    v14: int
-    v15: int
-    v16: int
-    reserved_1: int
-    reserved_2: int
-    reserved_3: int
-    reserved_4: int
-    reserved_5: int
-    reserved_6: int
-    reserved_7: int
+    v: List
+    reserved: List
+
+    def __init__(self, *kwargs):
+        self.symbol = kwargs[0]
+        self.count = kwargs[1]
+        self.v = kwargs[2:18]
+        self.reserved = kwargs[18:25]
+
+    def format(self, info_block):
+        d = self.__dict__.copy()
+        return d

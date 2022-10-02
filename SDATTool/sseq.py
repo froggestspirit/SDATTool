@@ -4,6 +4,7 @@ from struct import *
 
 @dataclass
 class SEQInfo:
+    symbol: str
     file_id: int
     unknown_1: int
     bnk: int
@@ -14,11 +15,40 @@ class SEQInfo:
     unknown_2: int
     unknown_3: int
 
+    def format(self, info_block):
+        d = self.__dict__.copy()
+        try:
+            if info_block.symbols[d["file_id"]] != "":
+                d["file_id"] = f"SSEQ/{info_block.symbols[d['file_id']]}.sseq"
+        except IndexError:
+            pass
+        try:
+            if info_block.bank.records[d["bnk"]].symbol != "":
+                d["bnk"] = info_block.bank.records[d["bnk"]].symbol
+        except IndexError:
+            pass
+        try:
+            if info_block.player.records[d["ply"]].symbol != "":
+                d["ply"] = info_block.player.records[d["ply"]].symbol
+        except IndexError:
+            pass
+        return d
+
 
 @dataclass
 class SEQARCInfo:
+    symbol: str
     file_id: int
     unknown_1: int
+
+    def format(self, info_block):
+        d = self.__dict__.copy()
+        try:
+            if info_block.symbols[d["file_id"]] != "":
+                d["file_id"] = f"SSAR/{info_block.symbols[d['file_id']]}.ssar"
+        except IndexError:
+            pass
+        return d
 
 
 @dataclass
