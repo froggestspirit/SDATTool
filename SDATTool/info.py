@@ -11,14 +11,14 @@ from group import GROUPInfo
 from strm import STRMInfo
 
 
-records = (("seq", SEQInfo, "<HHHBBBBBB"),
-           ("seqarc", SEQARCInfo, "<HH"),
-           ("bank", BANKInfo, "<HHHHHH"),
-           ("wavearc", WAVEARCInfo, "<HH"),
-           ("player", PLAYERInfo, "<BBBBI"),
-           ("group", GROUPInfo, "<I"),  # Do additional unpacking separately
-           ("player2", PLAYER2Info, "<BBBBBBBBBBBBBBBBBBBBBBBB"),
-           ("strm", STRMInfo, "<HHBBBBBBBB"))
+records = (("seq", SEQInfo),
+           ("seqarc", SEQARCInfo),
+           ("bank", BANKInfo),
+           ("wavearc", WAVEARCInfo),
+           ("player", PLAYERInfo),
+           ("group", GROUPInfo),
+           ("player2", PLAYER2Info),
+           ("strm", STRMInfo))
 
 
 @dataclass
@@ -68,7 +68,7 @@ class InfoBlock:
     def parse_records(self, symb_block = None):
         if not self.header:
             self.parse_header()
-        for record, info_class, struct in records:
+        for record, info_class in records:
             cursor = self.header.__dict__[f"{record}_offset"]
             mem_view = memoryview(self.data[cursor:])
             self.__dict__[record] = InfoBlockRecord(*unpack("<I", mem_view[:4]))
@@ -105,7 +105,7 @@ class InfoBlock:
         self.parse_records(symb_block)
         os.makedirs(info_folder, exist_ok=True)
         if symb_block:
-            for record, _, _ in records:
+            for record, _ in records:
                 with open(f"{info_folder}/{record}.json", "w") as outfile:
                     output = []
                     for i, rec in enumerate(self.__dict__[record].records):
@@ -123,7 +123,7 @@ class InfoBlock:
         self.header = InfoHeader(b'INFO', 0, 0, 0, 0, 0, 0, 0, 0, 0)
         self.data.write(pack(self.header_struct, *(self.header.__dict__[i] for i in self.header.__dict__)))
         self.data.write(b'\x00' * 24)  # reserved/unused space
-        for record, info_class, struct in records:
+        for record, info_class in records:
             self.__dict__[record] = InfoBlockRecord(0)
             self.__dict__[record].offsets = []
             self.__dict__[record].records = []
@@ -139,7 +139,7 @@ class InfoBlock:
                     self.__dict__[record].symbols.append("_")
         header_offset = 8
         pointers = {}
-        for record, info_class, struct in records:
+        for record, info_class in records:
             offset = self.data.tell()
             self.data.seek(header_offset)
             self.data.write(pack("<I", offset))
