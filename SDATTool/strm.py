@@ -36,8 +36,8 @@ class STRMInfo:
         except IndexError:
             pass
         try:
-            if info_block.player.records[d["ply"]].symbol != "":
-                d["ply"] = info_block.player.records[d["ply"]].symbol
+            if info_block.player2.records[d["ply"]].symbol != "":
+                d["ply"] = info_block.player2.records[d["ply"]].symbol
         except IndexError:
             pass
         return d
