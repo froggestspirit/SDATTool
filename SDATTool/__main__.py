@@ -24,6 +24,8 @@ def unpack(args):  # Unpack
 
 def build(args):  # Build
     print("Building SDAT...")
+    if os.path.exists(args.SDATfile):
+        args.SDATfile = f"{args.SDATfile}.out"
     with open(f"{args.SDATfile}", "wb") as outfile:
         sdat = SDAT(outfile)
         sdat.build(args.folder)
