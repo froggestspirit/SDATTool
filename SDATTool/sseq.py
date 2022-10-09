@@ -15,6 +15,23 @@ class SEQInfo:
     unknown_2: int
     unknown_3: int
 
+    def unformat(self, info_block, file_order):
+        try:
+            self.file_id = file_order.index(self.file_id)
+        except ValueError:
+            if isinstance(self.file_id, str):
+                raise FileNotFoundError(f"File not found: {self.file_id}")
+        try:
+            self.bnk = info_block.bank.symbols.index(self.bnk)
+        except ValueError:
+            if isinstance(self.bnk, str):
+                raise ValueError(f"Definition not found: {self.bnk}")
+        try:
+            self.ply = info_block.player.symbols.index(self.ply)
+        except ValueError:
+            if isinstance(self.ply, str):
+                raise ValueError(f"Definition not found: {self.ply}")
+        
     def format(self, info_block):
         d = self.__dict__.copy()
         try:
@@ -34,6 +51,13 @@ class SEQInfo:
             pass
         return d
 
+    @classmethod
+    def unpack(cls, index, mem_view):
+        return cls(f"seq_{index:04}", *unpack_from("<HHHBBBBBB", mem_view))
+
+    def pack(self, info_file) -> int:
+        info_file.data.write(pack("<HHHBBBBBB", *(self.__dict__[i] for i in self.__dict__ if i != 'symbol')))
+        return calcsize("<HHHBBBBBB")
 
 @dataclass
 class SEQARCInfo:
@@ -41,6 +65,13 @@ class SEQARCInfo:
     file_id: int
     unknown_1: int
 
+    def unformat(self, info_block, file_order):
+        try:
+            self.file_id = file_order.index(self.file_id)
+        except ValueError:
+            if isinstance(self.file_id, str):
+                raise FileNotFoundError(f"File not found: {self.file_id}")
+        
     def format(self, info_block):
         d = self.__dict__.copy()
         try:
@@ -50,6 +81,13 @@ class SEQARCInfo:
             pass
         return d
 
+    @classmethod
+    def unpack(cls, index, mem_view):
+        return cls(f"seqarc_{index:04}", *unpack_from("<HH", mem_view))
+
+    def pack(self, info_file) -> int:
+        info_file.data.write(pack("<HH", self.file_id, self.unknown_1))
+        return calcsize("<HH")
 
 @dataclass
 class SSEQHeader:

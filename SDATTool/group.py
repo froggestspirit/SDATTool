@@ -17,6 +17,17 @@ class GROUPInfo:
     count: int
     entries: List[dict] = None
         
+    def unformat(self, info_block, file_order):
+        for i in self.entries:
+            try:
+                i["entry"] = info_block.__dict__[i["type"]].symbols.index(i["entry"])
+            except KeyError:
+                pass
+            try:
+                i["type"] = tuple(info_map.keys())[tuple(info_map.values()).index(i["type"])]
+            except ValueError:
+                pass
+        
     def format(self, info_block):
         d = self.__dict__.copy()
         for entry in d["entries"]:
@@ -29,3 +40,18 @@ class GROUPInfo:
             except (KeyError, IndexError):
                 pass
         return d
+
+    @classmethod
+    def unpack(cls, index, mem_view):
+        sf = cls(f"group_{index:04}", *unpack_from("<I", mem_view))
+        sf.entries = []
+        for e in range(sf.count):
+            cursor = e * 8
+            sf.entries.append(dict(zip(("type", "entry"),(unpack_from("<II", mem_view[cursor:], offset=4)))))
+        return sf
+
+    def pack(self, info_file) -> int:
+        info_file.data.write(pack("<I", self.count))
+        for i in self.entries:
+            info_file.data.write(pack("<II", *i.values()))
+        return calcsize("<I") + (calcsize("<II") * self.count)

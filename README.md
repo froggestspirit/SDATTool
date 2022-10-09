@@ -11,6 +11,13 @@ Modes:
 
       -u Unpack SDAT
 
+      -b Build SDAT
+
+New in version 2.0.1:
+
+-Building SDAT
+
+-Unpack cleanup
 
 New in version 2.0.0:
 

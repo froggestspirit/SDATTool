@@ -2,6 +2,7 @@ from dataclasses import dataclass, make_dataclass
 import json
 import os
 from struct import *
+from tempfile import NamedTemporaryFile
 from typing import Any, List
 from info import InfoBlock
 
@@ -37,14 +38,13 @@ class SDAT:
         self.info = None
         self.fat = None
         self.file = None
-        self.parse_header()
+        self.header_struct = "<4sIIHH"
 
     def parse_header(self):
-        header_struct = "<4sIIHH"
         cursor = self.offset
-        mem_view = memoryview(self.data[cursor:cursor + calcsize(header_struct)])
-        cursor += calcsize(header_struct)
-        self.header = SDATHeader(*unpack(header_struct, mem_view))
+        mem_view = memoryview(self.data[cursor:cursor + calcsize(self.header_struct)])
+        cursor += calcsize(self.header_struct)
+        self.header = SDATHeader(*unpack(self.header_struct, mem_view))
         #print(self.header)
         if self.header.type != b'SDAT':
             raise ValueError("Not a valid SDAT header")
@@ -76,6 +76,74 @@ class SDAT:
             self.symb.dump(folder)
         self.info.dump(folder, self.symb)
         self.file.dump(folder, self.fat, self.info)
+
+    def build(self, folder:str):
+        with NamedTemporaryFile() as file_block, \
+             NamedTemporaryFile() as fat_block, \
+             NamedTemporaryFile() as info_block, \
+             NamedTemporaryFile() as symb_block:
+            self.fat = FatBlock(fat_block)
+            self.file = FileBlock(file_block, 0)
+            self.info = InfoBlock(info_block)
+            self.symb = SymbBlock(symb_block)
+            self.file.build_header()
+            with open(f"{folder}/files.txt", "r") as infile:
+                file_order = tuple(infile.read().split("\n"))
+            offset = 0
+            self.info.build(folder, file_order)
+            self.symb.build(self.info)
+            for file in file_order:
+                size = os.path.getsize(f"{folder}/{file}")
+                self.file.add_file(f"{folder}/{file}")
+                self.fat.add_entry(offset, size)
+                offset += size
+                offset = (offset + 0x1F) & 0xFFFFFFE0  # pad to 0x20
+            self.file.build()
+            self.fat.build()
+
+            self.header = SDATHeader(b'SDAT', 0x0100FEFF, 0, 0, 4)
+            self.data.write(pack(self.header_struct, *(self.header.__dict__[i] for i in self.header.__dict__)))
+            header_size = offset = 0x38
+            if self.header.blocks == 4:
+                header_size = offset = 0x40
+                self.data.write(pack("<II", offset, self.symb.header.size))
+                offset += (self.symb.header.size + 3) & 0xFFFFFFFC
+            self.data.write(pack("<II", offset, self.info.header.size))
+            offset += (self.info.header.size + 3) & 0xFFFFFFFC
+            self.data.write(pack("<II", offset, self.fat.header.size))
+            offset += (self.fat.header.size + 3) & 0xFFFFFFFC
+            file_pointer_offset = self.data.tell()  # save this for later to update
+            self.data.write(pack("<II", offset, self.file.header.size))
+            offset += (self.file.header.size + 3) & 0xFFFFFFFC
+            self.data.write(b'\x00' * 16)  # reserved/unused space
+            if self.header.blocks == 4:
+                self.data.write(self.symb.data.read())
+            self.data.write(self.info.data.read())
+
+            # since files need to be aligned to 0x20, the header is written first, then padding is added
+            # pad to 0x20
+            offset = self.data.tell()
+            offset += self.fat.header.size  # offset by the fat block size since it wasn't written yet
+            offset += 16  # offset by the file block header size since it wasn't written yet
+            pad_size = ((offset + 0x1F) & 0xFFFFFFE0) - offset
+            self.fat.build(offset=pad_size + offset)  # rebuild the fat block with the correct file offsets
+            self.data.write(self.fat.data.read())  # should be written after the padding and rebuild
+            # write the file header and the alignment padding
+            self.file.header.size += pad_size
+            self.data.write(pack(self.file.header_struct, *(self.file.header.__dict__[i] for i in self.file.header.__dict__)))
+            self.data.write(b'\x00' * 4)  # reserved/unused space
+            self.data.write(b'\x00' * pad_size)
+            # add the padding to the size of the block
+
+            self.data.write(self.file.data.read())
+            self.header.size = self.data.tell()
+            self.data.seek(8)
+            self.data.write(pack("<IH", self.header.size, header_size))
+            self.data.seek(file_pointer_offset + 4)  # rewrite the size in case it changed with padding
+            self.data.write(pack("<I", self.file.header.size))
+            self.data.flush()
+            self.data.seek(0)
+
 
 
 @dataclass
@@ -111,12 +179,12 @@ class SymbBlock:
         self.group = None
         self.player2 = None
         self.strm = None
+        self.header_struct = "<4sIIIIIIIII"
 
     def parse_header(self):
-        header_struct = "<4sIIIIIIIII"
-        cursor = calcsize(header_struct)
+        cursor = calcsize(self.header_struct)
         mem_view = memoryview(self.data[:cursor])
-        self.header = SymbHeader(*unpack(header_struct, mem_view))
+        self.header = SymbHeader(*unpack(self.header_struct, mem_view))
         #print(self.header)
         if self.header.type != b'SYMB':
             raise ValueError("Not a valid SYMB header")
@@ -151,6 +219,51 @@ class SymbBlock:
             self.parse_header()
         self.parse_records()
 
+    def build(self, info_block):
+        self.header = SymbHeader(b'SYMB', 0, 0, 0, 0, 0, 0, 0, 0, 0)
+        self.data.write(pack(self.header_struct, *(self.header.__dict__[i] for i in self.header.__dict__)))
+        self.data.write(b'\x00' * 24)  # reserved/unused space
+        offset = self.data.tell()
+        total_symb = 0
+        for record in records:
+            self.__dict__[record] = SymbBlockRecord(0)
+            self.__dict__[record].offsets = []
+            self.__dict__[record].records = []
+            for symb in info_block.__dict__[record].symbols:
+                total_symb += 1
+                if symb and symb[0] == "_":
+                    self.__dict__[record].offsets.append(0)
+                else:
+                    self.__dict__[record].offsets.append(offset)
+                    self.__dict__[record].records.append(symb)
+                    offset += len(symb) + 1
+        header_offset = 8
+        for record in records:
+            offset = self.data.tell()
+            self.data.seek(header_offset)
+            self.data.write(pack("<I", offset))
+            header_offset += 4
+            self.data.seek(0, 2)  # seek to the end
+            num_records = len(self.__dict__[record].offsets)
+            self.data.write(pack("<I", num_records))
+            offset = (total_symb * 4) + 32  # offset to add after sizes and offsets are written
+            for i in self.__dict__[record].offsets:
+                if i:
+                    i += offset  # add the offset to the symbol if it's not null
+                self.data.write(pack("<I", i))
+        for record in records:
+            for i in self.__dict__[record].records:
+                self.data.write(i.encode(encoding='utf-8'))
+                self.data.write(b'\x00')
+        # pad to 0x4
+        self.header.size = self.data.tell()
+        padding = (self.header.size + 0x3) & 0xFFFFFFFC
+        self.data.write(b'\x00' * (padding - self.header.size))
+        self.data.seek(4)
+        self.data.write(pack("<I", padding))
+        self.data.flush()
+        self.data.seek(0)
+
 
 @dataclass
 class FatEntry:
@@ -170,12 +283,12 @@ class FatBlock:
         self.data = data
         self.header = None
         self.records = []
+        self.header_struct = "<4sII"
 
     def parse_header(self):
-        header_struct = "<4sII"
-        cursor = calcsize(header_struct)
+        cursor = calcsize(self.header_struct)
         mem_view = memoryview(self.data[:cursor])
-        self.header = FatHeader(*unpack(header_struct, mem_view))
+        self.header = FatHeader(*unpack(self.header_struct, mem_view))
         #print(self.header)
         if self.header.type != b'FAT ':
             raise ValueError("Not a valid FAT header")
@@ -187,13 +300,31 @@ class FatBlock:
             cursor = (entry * 16) + 12
             self.records.append(FatEntry(*unpack("<II", self.data[cursor:cursor + 8])))
 
-    def dump(self, folder:str):
+    def dump(self, folder: str):
         # This probably doesn't need to be dumped, it's just needed to assist with the file block
         if not self.header:
             self.parse_header()
         self.parse_records()
         with open(f"{folder}/fat.json", "w") as outfile:
             outfile.write(json.dumps(tuple(i.__dict__ for i in self.records), indent=4))
+
+    def add_entry(self, offset: int, size: int):
+        self.records.append(FatEntry(offset, size))
+
+    def build(self, offset: int = 0):
+        self.header = FatHeader(b'FAT ', 0, len(self.records))
+        self.data.write(pack(self.header_struct, *(self.header.__dict__[i] for i in self.header.__dict__)))
+        for rec in self.records:
+            rec.offset += offset
+            self.data.write(pack("<IIII", *(rec.__dict__[i] for i in rec.__dict__), 0, 0))
+        # pad to 0x4
+        self.header.size = self.data.tell()
+        padding = (self.header.size + 0x3) & 0xFFFFFFFC
+        self.data.write(b'\x00' * (padding - self.header.size))
+        self.data.seek(4)
+        self.data.write(pack("<I", padding))
+        self.data.flush()
+        self.data.seek(0)
 
 
 @dataclass
@@ -204,21 +335,21 @@ class FileHeader:
 
 
 class FileBlock:
-    def __init__(self, data, offset:int):
+    def __init__(self, data, offset: int):
         self.data = data
         self.header = None
         self.offset = offset
+        self.header_struct = "<4sII"
 
     def parse_header(self):
-        header_struct = "<4sII"
-        cursor = calcsize(header_struct)
+        cursor = calcsize(self.header_struct)
         mem_view = memoryview(self.data[:cursor])
-        self.header = FileHeader(*unpack(header_struct, mem_view))
+        self.header = FileHeader(*unpack(self.header_struct, mem_view))
         #print(self.header)
         if self.header.type != b'FILE':
             raise ValueError("Not a valid FILE header")
 
-    def dump(self, folder:str, fat_block:FatBlock, info_block:InfoBlock = None):
+    def dump(self, folder: str, fat_block: FatBlock, info_block: InfoBlock = None):
         if not self.header:
             self.parse_header()
         fat_block.parse_records()
@@ -253,3 +384,20 @@ class FileBlock:
         if file_order:
             with open(f"{folder}/files.txt", "w") as outfile:
                 outfile.write("\n".join(file_order))
+
+    def build_header(self):
+        self.header = FatHeader(b'FILE', 0, 0)
+    
+    def add_file(self, filename: str):
+        self.header.count += 1
+        with open(filename, "rb") as infile:
+            self.data.write(infile.read())
+        # pad to 0x20
+        offset = self.data.tell()
+        offset_pad = (offset + 0x1F) & 0xFFFFFFE0
+        self.data.write(b'\x00' * (offset_pad - offset))
+            
+    def build(self):
+        self.header.size = self.data.tell() + 16  # Add the header size in
+        self.data.flush()
+        self.data.seek(0)
