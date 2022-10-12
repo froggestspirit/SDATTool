@@ -49,3 +49,35 @@ class STRMInfo:
     def pack(self, info_file) -> int:
         info_file.data.write(pack("<HHBBBBBBBB", *(self.__dict__[i] for i in self.__dict__ if i != 'symbol')))
         return calcsize("<HHBBBBBBBB")
+
+
+@dataclass
+class STRMHeader:
+    type: bytes
+    magic: bytes
+    file_size: int
+    size: int
+    blocks: int
+    block_type: bytes
+    block_size: int
+    reserved: bytes
+    count: int
+
+
+class STRM:
+    def __init__(self, data, id):
+        self.id = id
+        self.name = "STRM"
+        self.data = data
+        self.count = 0
+        self.header = None
+        self.header_struct = "<4sIIHH4sI32sI"
+
+    def parse_header(self):
+        self.header = STRMHeader(*unpack_from(self.header_struct, self.data))
+        
+    def convert(self, name, folder, info_block):
+        if not self.header:
+            self.parse_header()
+        with open(f"{folder}/{self.name}/{name}.{self.name.lower()}", "wb") as outfile:
+            outfile.write(self.data)

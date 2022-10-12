@@ -1,10 +1,15 @@
 from dataclasses import dataclass, make_dataclass
 import json
 import os
+from socket import SOCK_SEQPACKET
 from struct import *
 from tempfile import NamedTemporaryFile
 from typing import Any, List
 from info import InfoBlock
+from sseq import SSEQ, SSAR
+from sbnk import SBNK
+from swar import SWAR
+from strm import STRM
 
 
 blocks = ("symb", "info", "fat", "file")
@@ -16,6 +21,14 @@ records = ("seq",
            "group",
            "player2",
            "strm")
+
+record_class = {
+    "SSEQ": SSEQ,
+    "SSAR": SSAR,
+    "SBNK": SBNK,
+    "SWAR": SWAR,
+    "STRM": STRM
+}
 
 
 @dataclass
@@ -354,33 +367,21 @@ class FileBlock:
             self.parse_header()
         fat_block.parse_records()
         file_order = []
-        if not info_block:
-            for i, file in enumerate(fat_block.records):
-                offset = file.offset - self.offset
-                mem_view = memoryview(self.data[offset:offset + file.size])
-                suffix = unpack("<4s", mem_view[:4])[0].decode()
-                if suffix not in ("SSEQ", "SSAR", "SBNK", "SWAR", "STRM"):
-                    suffix = "bin"
-                os.makedirs(f"{folder}/{suffix}", exist_ok=True)
-                with open(f"{folder}/{suffix}/{i:04}.{suffix.lower()}", "wb") as outfile:
-                    outfile.write(mem_view)
-                file_order.append(f"{suffix}/{i:04}.{suffix.lower()}")
-        else:
-            for i, file in enumerate(fat_block.records):
-                symbol = ""
-                if i in info_block.symbols.keys():
-                    symbol = info_block.symbols[i]
-                if symbol == "":
-                    symbol = f"{i:04}"
-                offset = file.offset - self.offset
-                mem_view = memoryview(self.data[offset:offset + file.size])
-                suffix = unpack("<4s", mem_view[:4])[0].decode()
-                if suffix not in ("SSEQ", "SSAR", "SBNK", "SWAR", "STRM"):
-                    suffix = "bin"
-                os.makedirs(f"{folder}/{suffix}", exist_ok=True)
-                with open(f"{folder}/{suffix}/{symbol}.{suffix.lower()}", "wb") as outfile:
-                    outfile.write(mem_view)
-                file_order.append(f"{suffix}/{symbol}.{suffix.lower()}")
+        for i, file in enumerate(fat_block.records):
+            symbol = ""
+            if i in info_block.symbols.keys():
+                symbol = info_block.symbols[i]
+            if symbol == "":
+                symbol = f"{i:04}"
+            offset = file.offset - self.offset
+            mem_view = memoryview(self.data[offset:offset + file.size])
+            suffix = unpack("<4s", mem_view[:4])[0].decode()
+            if suffix not in ("SSEQ", "SSAR", "SBNK", "SWAR", "STRM"):
+                raise ValueError(f"Unknown file type: {suffix}")
+            os.makedirs(f"{folder}/{suffix}", exist_ok=True)
+            file_type = record_class[suffix](mem_view, i)
+            file_type.convert(symbol, folder, info_block)
+            file_order.append(f"{suffix}/{symbol}.{suffix.lower()}")
         if file_order:
             with open(f"{folder}/files.txt", "w") as outfile:
                 outfile.write("\n".join(file_order))
