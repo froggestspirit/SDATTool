@@ -44,6 +44,7 @@ class InfoBlockRecord:
 
 class InfoBlock:
     def __init__(self, data):
+        self.folder = None
         self.data = data
         self.header = None
         self.seq = None
@@ -54,8 +55,21 @@ class InfoBlock:
         self.group = None
         self.player2 = None
         self.strm = None
-        self.symbols = {}
+        self.symbols = {
+            "seq": {},
+            "seqarc": {},
+            "bank": {},
+            "wavearc": {},
+            "player": {},
+            "group": {},
+            "player2": {},
+            "strm": {},
+            "file": {},
+        }
+        self.ids = {}
         self.header_struct = "<4sIIIIIIIII"
+        self.swav_md5 = {}
+        self.swar_contents = {}
 
     def parse_header(self):
         cursor = calcsize(self.header_struct)
@@ -85,8 +99,8 @@ class InfoBlock:
                     for i in range(self.__dict__[record].count):
                         file_id = self.__dict__[record].records[i].file_id
                         symb = symb_block.__dict__[record].records[i]
-                        if file_id not in self.symbols.keys():
-                            self.symbols[file_id] = symb
+                        if file_id not in self.symbols["file"].keys():
+                            self.symbols["file"][file_id] = symb
                         if symb == "":
                             symb = f"_{record}_{i:04}"
                         self.__dict__[record].records[i].symbol = symb
@@ -99,6 +113,7 @@ class InfoBlock:
 
 
     def dump(self, folder:str, symb_block = None):
+        self.folder = folder
         info_folder = f"{folder}/info"
         if not self.header:
             self.parse_header()
@@ -120,6 +135,7 @@ class InfoBlock:
                     outfile.write(json.dumps(tuple(i.__dict__ for i in self.__dict__[record].records), indent=4))
 
     def build(self, folder: str, file_order):
+        self.folder = folder
         self.header = InfoHeader(b'INFO', 0, 0, 0, 0, 0, 0, 0, 0, 0)
         self.data.write(pack(self.header_struct, *(self.header.__dict__[i] for i in self.header.__dict__)))
         self.data.write(b'\x00' * 24)  # reserved/unused space
@@ -135,7 +151,7 @@ class InfoBlock:
                     self.__dict__[record].records.append(info_class(*rec.values()))
                     self.__dict__[record].symbols.append(self.__dict__[record].records[-1].symbol)
                 else:
-                    self.__dict__[record].records.append(None)
+                    self.__dict__[record].records.append(info_class())
                     self.__dict__[record].symbols.append("_")
         header_offset = 8
         pointers = {}
@@ -152,7 +168,9 @@ class InfoBlock:
             num_records = len(self.__dict__[record].records)
             offset = self.data.tell()
             for i in range(num_records):
-                if self.__dict__[record].records[i]:
+                if self.__dict__[record].records[i] and self.__dict__[record].records[i].symbol != "_":
+                    self.ids[self.__dict__[record].records[i].symbol] = i
+                    self.symbols[record][i] = self.__dict__[record].records[i].symbol
                     self.__dict__[record].records[i].unformat(self, file_order)
                     self.data.seek(pointers[record])
                     self.data.write(pack("<I", offset))

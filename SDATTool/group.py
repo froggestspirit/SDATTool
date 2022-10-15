@@ -13,8 +13,8 @@ info_map = {
 
 @dataclass
 class GROUPInfo:
-    symbol: str
-    count: int
+    symbol: str = "_"
+    count: int = None
     entries: List[dict] = None
         
     def unformat(self, info_block, file_order):
@@ -51,6 +51,8 @@ class GROUPInfo:
         return sf
 
     def pack(self, info_file) -> int:
+        if self.count is None:
+            return 0
         info_file.data.write(pack("<I", self.count))
         for i in self.entries:
             info_file.data.write(pack("<II", *i.values()))

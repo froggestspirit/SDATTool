@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 # SDAT-Tool by FroggestSpirit
-version = "2.0.2"
+version = "2.0.3"
 # Unpacks and builds SDAT files
 # Make backups, this can overwrite files without confirmation
 
@@ -19,7 +19,10 @@ def unpack(args):  # Unpack
     sdat = SDAT(memoryview(data), 0)
     sdat.parse_header()
     os.makedirs(args.folder, exist_ok=True)
-    sdat.dump(args.folder)
+    if args.convert:
+        sdat.convert(args.folder)
+    else:
+        sdat.dump(args.folder)
 
 
 def build(args):  # Build
@@ -49,6 +52,7 @@ def main():
     mode_grp.add_argument("-u", "--unpack", dest="mode", action="store_const", const=unpack)
     mode_grp.add_argument("-b", "--build", dest="mode", action="store_const", const=build)
     mode_grp.add_argument("-e", "--extract", dest="mode", action="store_const", const=extract)
+    parser.add_argument("-c", "--convert", action="store_true", default=False)
     args = parser.parse_args()
 
     if not args.folder:

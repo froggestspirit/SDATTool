@@ -4,16 +4,16 @@ from struct import *
 
 @dataclass
 class SEQInfo:
-    symbol: str
-    file_id: int
-    unknown_1: int
-    bnk: int
-    vol: int
-    cpr: int
-    ppr: int
-    ply: int
-    unknown_2: int
-    unknown_3: int
+    symbol: str = "_"
+    file_id: int = None
+    unknown_1: int = None
+    bnk: int = None
+    vol: int = None
+    cpr: int = None
+    ppr: int = None
+    ply: int = None
+    unknown_2: int = None
+    unknown_3: int = None
 
     def unformat(self, info_block, file_order):
         try:
@@ -35,8 +35,8 @@ class SEQInfo:
     def format(self, info_block):
         d = self.__dict__.copy()
         try:
-            if info_block.symbols[d["file_id"]] != "":
-                d["file_id"] = f"SSEQ/{info_block.symbols[d['file_id']]}.sseq"
+            if info_block.symbols["file"][d["file_id"]] != "":
+                d["file_id"] = f"SSEQ/{info_block.symbols['file'][d['file_id']]}.sseq"
         except IndexError:
             pass
         try:
@@ -56,14 +56,16 @@ class SEQInfo:
         return cls(f"seq_{index:04}", *unpack_from("<HHHBBBBBB", mem_view))
 
     def pack(self, info_file) -> int:
+        if self.file_id is None:
+            return 0
         info_file.data.write(pack("<HHHBBBBBB", *(self.__dict__[i] for i in self.__dict__ if i != 'symbol')))
         return calcsize("<HHHBBBBBB")
 
 @dataclass
 class SEQARCInfo:
-    symbol: str
-    file_id: int
-    unknown_1: int
+    symbol: str = "_"
+    file_id: int = None
+    unknown_1: int = None
 
     def unformat(self, info_block, file_order):
         try:
@@ -75,8 +77,8 @@ class SEQARCInfo:
     def format(self, info_block):
         d = self.__dict__.copy()
         try:
-            if info_block.symbols[d["file_id"]] != "":
-                d["file_id"] = f"SSAR/{info_block.symbols[d['file_id']]}.ssar"
+            if info_block.symbols["file"][d["file_id"]] != "":
+                d["file_id"] = f"SSAR/{info_block.symbols['file'][d['file_id']]}.ssar"
         except IndexError:
             pass
         return d
@@ -86,6 +88,8 @@ class SEQARCInfo:
         return cls(f"seqarc_{index:04}", *unpack_from("<HH", mem_view))
 
     def pack(self, info_file) -> int:
+        if self.file_id is None:
+            return 0
         info_file.data.write(pack("<HH", self.file_id, self.unknown_1))
         return calcsize("<HH")
 
@@ -102,8 +106,8 @@ class SSEQHeader:
 
 
 class SSEQ:
-    def __init__(self, data, id):
-        self.id = id
+    def __init__(self, data, _id):
+        self.id = _id
         self.name = "SSEQ"
         self.offset = 0
         self.data = data
@@ -132,15 +136,21 @@ class SSEQ:
             raise ValueError("Offset isn't the expected size of 0x1C")
         self.view = memoryview(self.data[self.header.offset:])
 
-    def dump(self, file_path:str):
+    def dump(self, name, folder, info_block):
         if not self.header:
             self.parse_header()
+        with open(f"{folder}/{self.name}/{name}.{self.name.lower()}", "wb") as outfile:
+            outfile.write(self.data)
 
     def convert(self, name, folder, info_block):
         if not self.header:
             self.parse_header()
         with open(f"{folder}/{self.name}/{name}.{self.name.lower()}", "wb") as outfile:
             outfile.write(self.data)
+
+    @classmethod
+    def build(cls, name, folder, info_block, _id):
+        pass
 
 
 @dataclass
@@ -157,8 +167,8 @@ class SSARHeader:
 
 
 class SSAR:
-    def __init__(self, data, id):
-        self.id = id
+    def __init__(self, data, _id):
+        self.id = _id
         self.name = "SSAR"
         self.offset = 0
         self.data = data
@@ -187,12 +197,19 @@ class SSAR:
             raise ValueError("Offset isn't the expected size of 0x1C")
         self.view = memoryview(self.data[self.header.offset:])
 
-    def dump(self, file_path:str):
+    def dump(self, name, folder, info_block):
         if not self.header:
             self.parse_header()
+        with open(f"{folder}/{self.name}/{name}.{self.name.lower()}", "wb") as outfile:
+            outfile.write(self.data)
 
     def convert(self, name, folder, info_block):
         if not self.header:
             self.parse_header()
         with open(f"{folder}/{self.name}/{name}.{self.name.lower()}", "wb") as outfile:
             outfile.write(self.data)
+
+    @classmethod
+    def build(cls, name, folder, info_block, _id):
+        pass
+

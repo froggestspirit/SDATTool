@@ -90,6 +90,14 @@ class SDAT:
         self.info.dump(folder, self.symb)
         self.file.dump(folder, self.fat, self.info)
 
+    def convert(self, folder:str):
+        if not self.header:
+            self.parse_header()
+        if self.symb:
+            self.symb.dump(folder)
+        self.info.dump(folder, self.symb)
+        self.file.dump(folder, self.fat, self.info, convert=True)
+
     def build(self, folder:str):
         with NamedTemporaryFile() as file_block, \
              NamedTemporaryFile() as fat_block, \
@@ -102,12 +110,22 @@ class SDAT:
             self.file.build_header()
             with open(f"{folder}/files.txt", "r") as infile:
                 file_order = tuple(infile.read().split("\n"))
+            for _id, file in enumerate(file_order):
+                self.info.symbols["file"][_id] = file
+                self.info.ids[file] = _id
             offset = 0
             self.info.build(folder, file_order)
             self.symb.build(self.info)
-            for file in file_order:
-                size = os.path.getsize(f"{folder}/{file}")
-                self.file.add_file(f"{folder}/{file}")
+            for type in ("SWAR", "SBNK", "SSEQ", "SSAR", "STRM"):  # extract in this order
+                for _id, file in enumerate(file_order):
+                    if file[:4] == type:
+                        #if not os.path.exists(f"{folder}/{file}"):
+                        try:
+                            file_class = record_class[file[:4]].build(file, folder, self.info, _id)
+                        except FileNotFoundError:
+                            pass
+            for _id, file in enumerate(file_order):
+                size = self.file.add_file(f"{folder}/{file}")
                 self.fat.add_entry(offset, size)
                 offset += size
                 offset = (offset + 0x1F) & 0xFFFFFFE0  # pad to 0x20
@@ -362,15 +380,15 @@ class FileBlock:
         if self.header.type != b'FILE':
             raise ValueError("Not a valid FILE header")
 
-    def dump(self, folder: str, fat_block: FatBlock, info_block: InfoBlock = None):
+    def dump(self, folder: str, fat_block: FatBlock, info_block: InfoBlock, convert: int = False):
         if not self.header:
             self.parse_header()
         fat_block.parse_records()
         file_order = []
         for i, file in enumerate(fat_block.records):
             symbol = ""
-            if i in info_block.symbols.keys():
-                symbol = info_block.symbols[i]
+            if i in info_block.symbols["file"].keys():
+                symbol = info_block.symbols["file"][i]
             if symbol == "":
                 symbol = f"{i:04}"
             offset = file.offset - self.offset
@@ -379,9 +397,23 @@ class FileBlock:
             if suffix not in ("SSEQ", "SSAR", "SBNK", "SWAR", "STRM"):
                 raise ValueError(f"Unknown file type: {suffix}")
             os.makedirs(f"{folder}/{suffix}", exist_ok=True)
-            file_type = record_class[suffix](mem_view, i)
-            file_type.convert(symbol, folder, info_block)
             file_order.append(f"{suffix}/{symbol}.{suffix.lower()}")
+        for type in ("SWAR", "SBNK", "SSEQ", "SSAR", "STRM"):  # extract in this order
+            for i, file in enumerate(fat_block.records):
+                symbol = ""
+                if i in info_block.symbols["file"].keys():
+                    symbol = info_block.symbols["file"][i]
+                if symbol == "":
+                    symbol = f"{i:04}"
+                suffix = file_order[i][:4]
+                if suffix == type:
+                    offset = file.offset - self.offset
+                    mem_view = memoryview(self.data[offset:offset + file.size])
+                    file_type = record_class[suffix](mem_view, i)
+                    if convert:
+                        file_type.convert(symbol, folder, info_block)
+                    else:
+                        file_type.dump(symbol, folder, info_block)
         if file_order:
             with open(f"{folder}/files.txt", "w") as outfile:
                 outfile.write("\n".join(file_order))
@@ -389,14 +421,16 @@ class FileBlock:
     def build_header(self):
         self.header = FatHeader(b'FILE', 0, 0)
     
-    def add_file(self, filename: str):
+    def add_file(self, filename: str) -> int:
         self.header.count += 1
+        start = self.data.tell()
         with open(filename, "rb") as infile:
             self.data.write(infile.read())
         # pad to 0x20
         offset = self.data.tell()
         offset_pad = (offset + 0x1F) & 0xFFFFFFE0
         self.data.write(b'\x00' * (offset_pad - offset))
+        return offset - start
             
     def build(self):
         self.header.size = self.data.tell() + 16  # Add the header size in
