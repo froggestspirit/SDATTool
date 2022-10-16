@@ -171,19 +171,33 @@ class SBNK:
             outfile.write(self.data)
 
     def add_inst(self, folder, rec, info_block):
+        try:  # don't include the swar in the MD5, it will not be in the file
+            del rec["swar"]
+        except TypeError:
+            pass
         inst_md5 = hashlib.md5(json.dumps(rec, sort_keys=True).encode('utf-8')).hexdigest()
         try:
             inst_file = info_block.inst_md5_list.index(inst_md5)
+            inst_name = info_block.inst_list[inst_file]
         except ValueError:
             inst_file = len(info_block.inst_md5_list)
             info_block.inst_md5_list.append(inst_md5)
-        try:
-            inst_name = f"INST/{rec['swav'].strip('~')[5:-5]}_{inst_file}.json"
-        except (AttributeError, TypeError):
-            if isinstance(rec, dict):
-                inst_name = f"INST/unknown_{inst_file}.json"
-            else:
-                inst_name = f"INST/unused_{inst_file}.json"
+            try:
+                inst_name = f"INST/{rec['swav'].strip('~')[5:-5]}.json"
+                if inst_name in info_block.inst_list:
+                    index = 1
+                    inst_name_part = f"INST/{rec['swav'].strip('~')[5:-5]}"
+                    while True:
+                        inst_name = f"{inst_name_part}_{index}.json"
+                        if inst_name not in info_block.inst_list:
+                            break
+                        index += 1
+            except (AttributeError, TypeError):
+                if isinstance(rec, dict):  # swavs with a ID instead of a name (maybe 8-bit synth)
+                    inst_name = f"INST/unknown_{inst_file}.json"
+                else:
+                    inst_name = f"INST/unused_{inst_file}.json"
+            info_block.inst_list.append(inst_name)
         with open(f"{folder}/{self.name}/{inst_name}", "w") as outfile:
             outfile.write(json.dumps(rec, indent=4))
         return inst_name
@@ -242,7 +256,7 @@ class SBNK:
             rec["instruments"] = []
             for i in range(count):
                 r_inst = inst_format(inst_type(*unpack_from(record_struct, self.data, offset=offset)), info_block, self.id)
-                rec["instruments"].append(self.add_inst(folder, r_inst, info_block))
+                rec["instruments"].append({"swar": r_inst["swar"], "inst":self.add_inst(folder, r_inst, info_block)})
                 offset += record_size
             records.append(rec)
             expected_offset = offset
@@ -303,8 +317,10 @@ class SBNK:
                     if count != len(record["instruments"]):
                         raise ValueError(f"Unexpected count of instruments for record {index}")
                     for rec in record["instruments"]:
-                        with open(f"{folder}/SBNK/{rec}", "r") as inst_file:
-                            rec = json.loads(inst_file.read())
+                        with open(f"{folder}/SBNK/{rec['inst']}", "r") as inst_file:
+                            temp_rec = json.loads(inst_file.read())
+                            rec.update(temp_rec)
+                            del rec["inst"]
                         if inst_type == SBNKInstMulti:
                             if "unknown" not in rec.keys():
                                 rec["unknown"] = 1
