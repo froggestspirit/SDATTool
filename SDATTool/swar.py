@@ -143,9 +143,12 @@ class SWAR:
             pointer, = unpack_from("<I", self.data, offset=offset)
             offset += 4
             swav = SWAV(memoryview(self.data[pointer:]))
-            swav_name = f"SWAV/{self.id}_{i}.swav"
+            swav_name = f"SWAV/{name}_{i}.swav"
             if mapped_names:
                 swav_name = mapped_names[i]
+                folder_name = "/".join(swav_name.split("/")[:-1])
+                if folder_name:
+                    os.makedirs(f"{folder}/{self.name}/{folder_name}", exist_ok=True)
             new_filename = swav.extract(swav_name, folder, info_block)
             while True:
                 if new_filename not in filenames:  # Workaround to keep the correct index if a swar has duplicate swavs
