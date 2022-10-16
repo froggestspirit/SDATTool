@@ -6,7 +6,7 @@ from multiprocessing.sharedctypes import Value
 import os
 from struct import *
 from tempfile import NamedTemporaryFile
-from typing import List
+from typing import List, Type
 
 
 @dataclass
@@ -177,9 +177,16 @@ class SBNK:
         except ValueError:
             inst_file = len(info_block.inst_md5_list)
             info_block.inst_md5_list.append(inst_md5)
-        with open(f"{folder}/{self.name}/INST/{inst_file}.json", "w") as outfile:
+        try:
+            inst_name = f"INST/{rec['swav'].strip('~')[5:-5]}_{inst_file}.json"
+        except (AttributeError, TypeError):
+            if isinstance(rec, dict):
+                inst_name = f"INST/unknown_{inst_file}.json"
+            else:
+                inst_name = f"INST/unused_{inst_file}.json"
+        with open(f"{folder}/{self.name}/{inst_name}", "w") as outfile:
             outfile.write(json.dumps(rec, indent=4))
-        return f"INST/{inst_file}.json"
+        return inst_name
 
     def convert(self, name, folder, info_block):
         if not self.header:
