@@ -155,14 +155,13 @@ class SDAT:
             # pad to 0x20
             offset = self.data.tell()
             offset += self.fat.header.size  # offset by the fat block size since it wasn't written yet
-            offset += 16  # offset by the file block header size since it wasn't written yet
+            offset += 12  # offset by the file block header size since it wasn't written yet
             pad_size = ((offset + 0x1F) & 0xFFFFFFE0) - offset
             self.fat.build(offset=pad_size + offset)  # rebuild the fat block with the correct file offsets
             self.data.write(self.fat.data.read())  # should be written after the padding and rebuild
             # write the file header and the alignment padding
             self.file.header.size += pad_size
             self.data.write(pack(self.file.header_struct, *(self.file.header.__dict__[i] for i in self.file.header.__dict__)))
-            self.data.write(b'\x00' * 4)  # reserved/unused space
             self.data.write(b'\x00' * pad_size)
             # add the padding to the size of the block
 
@@ -433,6 +432,6 @@ class FileBlock:
         return offset - start
             
     def build(self):
-        self.header.size = self.data.tell() + 16  # Add the header size in
+        self.header.size = self.data.tell() + 12  # Add the header size in
         self.data.flush()
         self.data.seek(0)
