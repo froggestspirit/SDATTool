@@ -32,6 +32,26 @@ def build(args):  # Build
     with open(f"{args.SDATfile}", "wb") as outfile:
         sdat = SDAT(outfile)
         sdat.build(args.folder)
+    entries = []
+    if args.ram_usage:
+        for song in sdat.info.seq.records:
+            if song.symbol == "_":
+                continue
+            files = []
+            size = sdat.fat.records[song.file_id].size
+            files.append(sdat.info.symbols["file"][song.file_id])
+            bank = sdat.info.bank.records[song.bnk]
+            size += sdat.fat.records[bank.file_id].size
+            files.append(sdat.info.symbols["file"][bank.file_id])
+            for w in bank.wa:
+                if w != 0xFFFF:  # Maybe code to handle duplicates of the same swar?
+                    swar = sdat.info.wavearc.records[w]
+                    size += sdat.fat.records[swar.file_id].size
+                    files.append(sdat.info.symbols["file"][swar.file_id])
+            entries.append([size, song.symbol, files])
+        entries.sort()
+        for i in entries:
+            print(i)
 
 
 def extract(args):  # Extract SDAT from NDS
@@ -53,6 +73,7 @@ def main():
     mode_grp.add_argument("-b", "--build", dest="mode", action="store_const", const=build)
     mode_grp.add_argument("-e", "--extract", dest="mode", action="store_const", const=extract)
     parser.add_argument("-c", "--convert", action="store_true", default=False)
+    parser.add_argument("-ru", "--ram-usage", action="store_true", default=False)
     args = parser.parse_args()
 
     if not args.folder:
