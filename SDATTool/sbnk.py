@@ -1,7 +1,9 @@
 from dataclasses import dataclass
 from distutils.log import info
+import hashlib
 import json
 from multiprocessing.sharedctypes import Value
+import os
 from struct import *
 from tempfile import NamedTemporaryFile
 from typing import List
@@ -168,6 +170,17 @@ class SBNK:
         with open(f"{folder}/{self.name}/{name}.{self.name.lower()}", "wb") as outfile:
             outfile.write(self.data)
 
+    def add_inst(self, folder, rec, info_block):
+        inst_md5 = hashlib.md5(json.dumps(rec, sort_keys=True).encode('utf-8')).hexdigest()
+        try:
+            inst_file = info_block.inst_md5_list.index(inst_md5)
+        except ValueError:
+            inst_file = len(info_block.inst_md5_list)
+            info_block.inst_md5_list.append(inst_md5)
+        with open(f"{folder}/{self.name}/INST/{inst_file}.json", "w") as outfile:
+            outfile.write(json.dumps(rec, indent=4))
+        return f"INST/{inst_file}.json"
+
     def convert(self, name, folder, info_block):
         if not self.header:
             self.parse_header()
@@ -191,14 +204,14 @@ class SBNK:
         if ordered_pointers:
             indexed_pointers.append(ordered_pointers[0][1])
         expected_offset = offset
+        os.makedirs(f"{folder}/{self.name}/INST", exist_ok=True)
         for type, offset, _ in ordered_pointers:
             if offset == 0xFFFFFFFF:
                 continue
             if expected_offset != offset:  # This grabs unused data (BW has this)
-                #raise ValueError(f"Expected offset {expected_offset}, got {offset}")
-                rec = {}
-                rec["unused"] = unpack_from(f"<{'B' * (offset - expected_offset)}", self.data, offset=expected_offset)
-                records.append(rec)
+                #raise ValueError(f"{name}: Expected offset {expected_offset}, got {offset}")
+                rec = unpack_from(f"<{'B' * (offset - expected_offset)}", self.data, offset=expected_offset)
+                records.append({"unused": self.add_inst(folder, rec, info_block)})
                 if indexed_pointers[-1] != expected_offset:
                     indexed_pointers.append(expected_offset)
             rec = {}
@@ -221,15 +234,15 @@ class SBNK:
             record_size = calcsize(record_struct)
             rec["instruments"] = []
             for i in range(count):
-                rec["instruments"].append(inst_format(inst_type(*unpack_from(record_struct, self.data, offset=offset)), info_block, self.id))
+                r_inst = inst_format(inst_type(*unpack_from(record_struct, self.data, offset=offset)), info_block, self.id)
+                rec["instruments"].append(self.add_inst(folder, r_inst, info_block))
                 offset += record_size
             records.append(rec)
             expected_offset = offset
-        if expected_offset != self.header.file_size:  # This grabs unused data at the end (B2W2 has this)
+        if self.header.file_size - expected_offset > 3:  # This grabs unused data at the end (B2W2 has this)
             #raise ValueError(f"{name}: Expected size {self.header.file_size}, got {expected_offset}")
-            rec = {}
-            rec["unused"] = unpack_from(f"<{'B' * (self.header.file_size - expected_offset)}", self.data, offset=expected_offset)
-            records.append(rec)
+            rec = unpack_from(f"<{'B' * (self.header.file_size - expected_offset)}", self.data, offset=expected_offset)
+            records.append({"unused": self.add_inst(folder, rec, info_block)})
             if indexed_pointers[-1] != expected_offset:
                 indexed_pointers.append(expected_offset)
         for i in output_json["pointers"]:
@@ -257,7 +270,8 @@ class SBNK:
             for index, record in enumerate(json_data["records"]):
                 pointers.append(offset)
                 if "unused" in record.keys():
-                    cls.data.write(bytearray(record["unused"]))
+                    with open(f"{folder}/SBNK/{record['unused']}", "r") as inst_file:
+                        cls.data.write(bytearray(json.loads(inst_file.read())))
                 else:
                     count = 1
                     inst_type = SBNKInst
@@ -282,6 +296,8 @@ class SBNK:
                     if count != len(record["instruments"]):
                         raise ValueError(f"Unexpected count of instruments for record {index}")
                     for rec in record["instruments"]:
+                        with open(f"{folder}/SBNK/{rec}", "r") as inst_file:
+                            rec = json.loads(inst_file.read())
                         if inst_type == SBNKInstMulti:
                             if "unknown" not in rec.keys():
                                 rec["unknown"] = 1

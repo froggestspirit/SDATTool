@@ -68,6 +68,7 @@ class InfoBlock:
         }
         self.ids = {}
         self.header_struct = "<4sIIIIIIIII"
+        self.inst_md5_list = []
         self.swav_md5 = {}
         self.swar_contents = {}
 
