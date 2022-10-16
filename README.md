@@ -21,6 +21,10 @@ Modes:
 
       -c Convert dumped files (if not used, files will only be dumped)
 
+New in version 2.0.4:
+
+-SBNK entries get their own json files, removing duplicates
+
 New in version 2.0.3:
 
 -Parse and rebuild SBNK and SWAR files
