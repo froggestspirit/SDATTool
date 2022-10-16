@@ -180,12 +180,12 @@ class SBNK:
             inst_file = info_block.inst_md5_list.index(inst_md5)
             inst_name = info_block.inst_list[inst_file]
         except ValueError:
-            swav_file = '.'.join(rec["swav"].strip("~").split(".")[:-1]).replace("SWAV/", "INST/")
-            swav_folder = "/".join(swav_file.split("/")[:-1])
-            os.makedirs(f"{folder}/SBNK/{swav_folder}", exist_ok=True)
             inst_file = len(info_block.inst_md5_list)
             info_block.inst_md5_list.append(inst_md5)
             try:
+                swav_file = '.'.join(rec["swav"].strip("~").split(".")[:-1]).replace("SWAV/", "INST/")
+                swav_folder = "/".join(swav_file.split("/")[:-1])
+                os.makedirs(f"{folder}/SBNK/{swav_folder}", exist_ok=True)
                 inst_name = f"{swav_file}.json"
                 if inst_name in info_block.inst_list:
                     index = 1
