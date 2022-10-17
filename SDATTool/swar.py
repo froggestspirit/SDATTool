@@ -135,9 +135,8 @@ class SWAR:
         filenames = []
         mapped_names = None
         try:
-            with open(f"{folder}/{self.name}/{name}.txt", "r") as mapped_file:
-                mapped_names = tuple(mapped_file.read().split("\n"))
-        except FileNotFoundError:
+            mapped_names = info_block.swar_contents[name]
+        except KeyError:
             pass
         for i in range(self.header.count):
             pointer, = unpack_from("<I", self.data, offset=offset)

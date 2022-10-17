@@ -95,8 +95,16 @@ class SDAT:
             self.parse_header()
         if self.symb:
             self.symb.dump(folder)
+        try:
+            with open(f"{folder}/swar_contents.json", "r") as mapped_file:
+                self.info.swar_contents = json.loads(mapped_file.read())
+        except FileNotFoundError:
+            pass
         self.info.dump(folder, self.symb)
         self.file.dump(folder, self.fat, self.info, convert=True)
+        if not os.path.exists(f"{folder}/swar_contents.json"):
+            with open(f"{folder}/swar_contents.json", "w") as outfile:
+                outfile.write(json.dumps(self.info.swar_contents, indent=4))
 
     def build(self, folder:str):
         with NamedTemporaryFile() as file_block, \
@@ -173,7 +181,6 @@ class SDAT:
             self.data.write(pack("<I", self.file.header.size))
             self.data.flush()
             self.data.seek(0)
-
 
 
 @dataclass
