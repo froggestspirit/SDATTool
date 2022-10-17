@@ -2,6 +2,7 @@ from dataclasses import dataclass
 import hashlib
 import json
 import os
+import shutil
 from struct import *
 from tempfile import NamedTemporaryFile
 
@@ -80,14 +81,20 @@ class SWAV:
         self.header.block_size = self.header.file_size - 16
         self.wav_data = memoryview(self.data[:self.header.block_size - 8])
         
-    def extract(self, name, folder, info_block):
+    def extract(self, name, folder, info_block, prioritized_name):
         if not self.header:
             self.info = SWAVInfo(*unpack_from(self.info_struct, self.data))
         if not self.header:
             self.build_header()
         md5 = hashlib.md5(self.wav_data).hexdigest()
         try:
-            return info_block.swav_md5[md5]
+            old_name = info_block.swav_md5[md5]
+            if old_name == name:
+                return name
+            if prioritized_name:
+                shutil.move(f"{folder}/SWAR/{old_name}", f"{folder}/SWAR/{name}")
+                info_block.swav_md5[md5] = name
+            return old_name
         except KeyError:
             pass
         os.makedirs(f"{folder}/SWAR/{self.name}", exist_ok=True)
@@ -143,12 +150,29 @@ class SWAR:
             offset += 4
             swav = SWAV(memoryview(self.data[pointer:]))
             swav_name = f"SWAV/{name}_{i}.swav"
-            if mapped_names:
-                swav_name = mapped_names[i]
-                folder_name = "/".join(swav_name.split("/")[:-1])
-                if folder_name:
-                    os.makedirs(f"{folder}/{self.name}/{folder_name}", exist_ok=True)
-            new_filename = swav.extract(swav_name, folder, info_block)
+            prioritized_name = False
+            try:
+                if mapped_names:
+                    swav_name = mapped_names[i]
+                    prioritized_name = True
+                    folder_name = "/".join(swav_name.split("/")[:-1])
+                    if folder_name:
+                        os.makedirs(f"{folder}/{self.name}/{folder_name}", exist_ok=True)
+            except IndexError:
+                pass
+            new_filename = swav.extract(swav_name, folder, info_block, prioritized_name)
+            if new_filename != swav_name and prioritized_name:
+                for key in info_block.swar_contents.keys():
+                    new_names = []
+                    for item in info_block.swar_contents[key]:
+                        if item == new_filename:
+                            item = swav_name
+                        new_names.append(item)
+                    info_block.swar_contents[key] = tuple(new_names)
+                for fn in filenames:
+                    if fn.strip("~") == new_filename:
+                        fn = fn.replace(new_filename, swav_name)
+                new_filename = swav_name
             while True:
                 if new_filename not in filenames:  # Workaround to keep the correct index if a swar has duplicate swavs
                     break

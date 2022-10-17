@@ -102,9 +102,11 @@ class SDAT:
             pass
         self.info.dump(folder, self.symb)
         self.file.dump(folder, self.fat, self.info, convert=True)
-        if not os.path.exists(f"{folder}/swar_contents.json"):
-            with open(f"{folder}/swar_contents.json", "w") as outfile:
-                outfile.write(json.dumps(self.info.swar_contents, indent=4))
+        sc_file = f"{folder}/swar_contents.json"
+        if os.path.exists(sc_file):
+            sc_file = f"{sc_file}.new"
+        with open(sc_file, "w") as outfile:
+            outfile.write(json.dumps(self.info.swar_contents, indent=4).replace("~",""))
 
     def build(self, folder:str):
         with NamedTemporaryFile() as file_block, \
