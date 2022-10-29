@@ -171,10 +171,18 @@ class SBNK:
             outfile.write(self.data)
 
     def add_inst(self, folder, rec, info_block):
+        try:
+            swav_name = rec["swav"]
+        except KeyError:
+            swav_name = rec["split"][0]["swav"]
         try:  # don't include the swar in the MD5, it will not be in the file
             del rec["swar"]
-        except TypeError:
-            pass
+        except (TypeError, KeyError):
+            try:
+                for i in rec["split"]:
+                    del i["swar"]
+            except (TypeError, KeyError):
+                pass
         inst_md5 = hashlib.md5(json.dumps(rec, sort_keys=True).encode('utf-8')).hexdigest()
         try:
             inst_file = info_block.inst_md5_list.index(inst_md5)
@@ -183,7 +191,7 @@ class SBNK:
             inst_file = len(info_block.inst_md5_list)
             info_block.inst_md5_list.append(inst_md5)
             try:
-                swav_file = '.'.join(rec["swav"].strip("~").split(".")[:-1]).replace("SWAV/", "INST/")
+                swav_file = '.'.join(swav_name.strip("~").split(".")[:-1]).replace("SWAV/", "INST/")
                 swav_folder = "/".join(swav_file.split("/")[:-1])
                 os.makedirs(f"{folder}/SBNK/{swav_folder}", exist_ok=True)
                 inst_name = f"{swav_file}.json"
@@ -206,6 +214,9 @@ class SBNK:
         return inst_name
 
     def convert(self, name, folder, info_block):
+        if info_block.options.single_sbnk:
+            self.convert_one_file(name, folder, info_block)
+            return
         if not self.header:
             self.parse_header()
         offset = calcsize(self.header_struct)
@@ -253,10 +264,28 @@ class SBNK:
                     offset += 2
                 else:  # type == 17
                     rec["keysplits"] = unpack_from("<BBBBBBBB", self.data, offset=offset)
+                    rec["instruments"] = []
                     count = len(tuple(i for i in rec["keysplits"] if i))
                     offset += 8
+                    this_swar = None
+                    temp_rec = {"keysplits": rec["keysplits"], "split": []}
+                    temp_offset = offset
+                    for i in range(count):
+                        r_inst = inst_format(inst_type(*unpack_from(record_struct, self.data, offset=offset)), info_block, self.id)
+                        if not this_swar:
+                            this_swar = r_inst["swar"]
+                        if this_swar != r_inst["swar"]:  # if the split uses more than one different swar, don't store it in the same file
+                            offset = temp_offset
+                            break
+                        temp_rec["split"].append(r_inst)
+                        offset += record_size
+                    rec["instruments"].append({"swar": this_swar, "inst":self.add_inst(folder, temp_rec, info_block)})
+                    del rec["keysplits"]
+                    count = 0
+
             record_size = calcsize(record_struct)
-            rec["instruments"] = []
+            if "instruments" not in rec.keys():
+                rec["instruments"] = []
             for i in range(count):
                 r_inst = inst_format(inst_type(*unpack_from(record_struct, self.data, offset=offset)), info_block, self.id)
                 rec["instruments"].append({"swar": r_inst["swar"], "inst":self.add_inst(folder, r_inst, info_block)})
@@ -267,6 +296,81 @@ class SBNK:
             #raise ValueError(f"{name}: Expected size {self.header.file_size}, got {expected_offset}")
             rec = unpack_from(f"<{'B' * (self.header.file_size - expected_offset)}", self.data, offset=expected_offset)
             records.append({"unused": self.add_inst(folder, rec, info_block)})
+            if indexed_pointers[-1] != expected_offset:
+                indexed_pointers.append(expected_offset)
+        for i in output_json["pointers"]:
+            try:
+                i["index"] = indexed_pointers.index(i["index"])
+            except KeyError:
+                pass
+        output_json["records"] = tuple(i for i in records)
+        with open(f"{folder}/{self.name}/{name}.json", "w") as outfile:
+            outfile.write(json.dumps(output_json, indent=4))
+
+    def convert_one_file(self, name, folder, info_block):  # convert the sbnk into one json, instead of separate instruments
+        if not self.header:
+            self.parse_header()
+        offset = calcsize(self.header_struct)
+        pointers = []
+        output_json = {"pointers": [],
+                       "records": []}
+        for record in range(self.header.count):
+            pointers.append(unpack_from("<BHB", self.data, offset=offset))
+            output_json["pointers"].append(dict(zip(("type", "index", "reserved"),pointers[-1])))
+            if not output_json["pointers"][-1]["reserved"]:
+                del output_json["pointers"][-1]["reserved"]  # this is expected to be 0, only write it if it isn't
+            if output_json["pointers"][-1]["type"] == 0:
+                output_json["pointers"][-1] = {}
+                pointers[-1] = tuple([pointers[-1][0], 0xFFFFFFFF, pointers[-1][2]])
+            offset += 4
+        ordered_pointers = list(set(pointers))
+        ordered_pointers.sort(key=lambda tup: tup[1])
+        records = []
+        indexed_pointers = []
+        if ordered_pointers:
+            indexed_pointers.append(ordered_pointers[0][1])
+        expected_offset = offset
+        os.makedirs(f"{folder}/{self.name}/INST", exist_ok=True)
+        for type, offset, _ in ordered_pointers:
+            if offset == 0xFFFFFFFF:
+                continue
+            if expected_offset != offset:  # This grabs unused data (BW has this)
+                #raise ValueError(f"{name}: Expected offset {expected_offset}, got {offset}")
+                rec = unpack_from(f"<{'B' * (offset - expected_offset)}", self.data, offset=expected_offset)
+                records.append({"unused": rec})
+                if indexed_pointers[-1] != expected_offset:
+                    indexed_pointers.append(expected_offset)
+            rec = {}
+            if indexed_pointers[-1] != offset:
+                indexed_pointers.append(offset)
+            record_struct = "<HHBBBBBB"
+            count = 1
+            inst_type = SBNKInst
+            if type in (16, 17):
+                record_struct = "<HHHBBBBBB"
+                inst_type = SBNKInstMulti
+                if type ==16:
+                    rec["range_low"], rec["range_high"] = unpack_from("<BB", self.data, offset=offset)
+                    count = (rec["range_high"] - rec["range_low"]) + 1
+                    offset += 2
+                else:  # type == 17
+                    rec["keysplits"] = unpack_from("<BBBBBBBB", self.data, offset=offset)
+                    count = len(tuple(i for i in rec["keysplits"] if i))
+                    offset += 8
+
+            record_size = calcsize(record_struct)
+            if "instruments" not in rec.keys():
+                rec["instruments"] = []
+            for i in range(count):
+                r_inst = inst_format(inst_type(*unpack_from(record_struct, self.data, offset=offset)), info_block, self.id)
+                rec["instruments"].append(r_inst)
+                offset += record_size
+            records.append(rec)
+            expected_offset = offset
+        if self.header.file_size - expected_offset > 3:  # This grabs unused data at the end (B2W2 has this)
+            #raise ValueError(f"{name}: Expected size {self.header.file_size}, got {expected_offset}")
+            rec = unpack_from(f"<{'B' * (self.header.file_size - expected_offset)}", self.data, offset=expected_offset)
+            records.append({"unused": rec})
             if indexed_pointers[-1] != expected_offset:
                 indexed_pointers.append(expected_offset)
         for i in output_json["pointers"]:
@@ -320,15 +424,35 @@ class SBNK:
                     if count != len(record["instruments"]):
                         raise ValueError(f"Unexpected count of instruments for record {index}")
                     for rec in record["instruments"]:
-                        with open(f"{folder}/SBNK/{rec['inst']}", "r") as inst_file:
-                            temp_rec = json.loads(inst_file.read())
-                            rec.update(temp_rec)
-                            del rec["inst"]
-                        if inst_type == SBNKInstMulti:
-                            if "unknown" not in rec.keys():
-                                rec["unknown"] = 1
-                        rec_struct = inst_unformat(inst_type(**rec), info_block, _id)
-                        cls.data.write(pack(record_struct, *rec_struct.values()))
+                        if "inst" in rec.keys():  #load external instrument jsons
+                            with open(f"{folder}/SBNK/{rec['inst']}", "r") as inst_file:
+                                temp_rec = json.loads(inst_file.read())
+                                if "keysplits" in temp_rec.keys():  #Keysplits are stored in the external instrument json
+                                    cls.data.write(pack("<BBBBBBBB", *temp_rec["keysplits"]))
+                                    inst_type = SBNKInstMulti
+                                    record_struct = "<HHHBBBBBB"
+                                    for split in temp_rec["split"]:
+                                        record["instruments"].append(split)
+                                        record["instruments"][-1]["swar"] = record["instruments"][0]["swar"]
+                                        record["instruments"][-1]["unknown"] = 1
+                                        rec_struct = inst_unformat(inst_type(**record["instruments"][-1]), info_block, _id)
+                                        cls.data.write(pack(record_struct, *rec_struct.values()))
+                                    del record["instruments"][0]  # remove the dummy first record
+                                    break
+                                else: # Either keysplits are in the base json, or there are none
+                                    rec.update(temp_rec)
+                                    del rec["inst"]
+                                    if inst_type == SBNKInstMulti:
+                                        if "unknown" not in rec.keys():
+                                            rec["unknown"] = 1
+                                    rec_struct = inst_unformat(inst_type(**rec), info_block, _id)
+                                    cls.data.write(pack(record_struct, *rec_struct.values()))
+                        else: # this assumes all instrument data is in the base json
+                            if inst_type == SBNKInstMulti:
+                                if "unknown" not in rec.keys():
+                                    rec["unknown"] = 1
+                            rec_struct = inst_unformat(inst_type(**rec), info_block, _id)
+                            cls.data.write(pack(record_struct, *rec_struct.values()))
                 offset = cls.data.tell()
             # pad to 0x04
             offset = cls.data.tell()

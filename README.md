@@ -21,6 +21,8 @@ Modes:
 
       -c Convert dumped files (if not used, files will only be dumped)
 
+      -ss (single-sbnk) converted sbnks will be output to one json each, instead of splitting them into the inst folder
+
 New in version 2.0.5:
 
 -Initial GUI support

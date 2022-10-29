@@ -22,7 +22,7 @@ def unpack(args):  # Unpack
     print("Unpacking...")
     with open(args.SDATfile, "rb") as infile:
         data = infile.read()
-    sdat = SDAT(memoryview(data), 0)
+    sdat = SDAT(args, memoryview(data), 0)
     sdat.parse_header()
     os.makedirs(args.folder, exist_ok=True)
     if args.convert:
@@ -34,7 +34,7 @@ def unpack(args):  # Unpack
 def build(args):  # Build
     print("Building SDAT...")
     with open(f"{args.SDATfile}", "wb") as outfile:
-        sdat = SDAT(outfile)
+        sdat = SDAT(args, outfile)
         sdat.build(args.folder)
     entries = []
     if args.ram_usage:
@@ -136,6 +136,7 @@ def main():
     mode_grp.add_argument("-b", "--build", dest="mode", action="store_const", const=build)
     mode_grp.add_argument("-e", "--extract", dest="mode", action="store_const", const=extract)
     parser.add_argument("-c", "--convert", action="store_true", default=False)
+    parser.add_argument("-ss", "--single-sbnk", action="store_true", default=False)
     parser.add_argument("-ru", "--ram-usage", action="store_true", default=False)
     args = parser.parse_args()
 

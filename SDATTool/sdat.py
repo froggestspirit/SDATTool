@@ -41,7 +41,7 @@ class SDATHeader:
 
 
 class SDAT:
-    def __init__(self, data, offset:int = 0):
+    def __init__(self, args, data, offset:int = 0):
         self.offset = offset
         self.data = data
         self.view = None
@@ -52,6 +52,7 @@ class SDAT:
         self.fat = None
         self.file = None
         self.header_struct = "<4sIIHH"
+        self.args = args
 
     def parse_header(self):
         cursor = self.offset
@@ -79,6 +80,7 @@ class SDAT:
         if self.header.blocks == 4:
             self.symb = SymbBlock(memoryview(self.view[self.blocks.symb_offset:self.blocks.symb_offset + self.blocks.symb_size]))
         self.info = InfoBlock(memoryview(self.view[self.blocks.info_offset:self.blocks.info_offset + self.blocks.info_size]))
+        self.info.options = self.args
         self.fat = FatBlock(memoryview(self.view[self.blocks.fat_offset:self.blocks.fat_offset + self.blocks.fat_size]))
         self.file = FileBlock(memoryview(self.view[self.blocks.file_offset:self.blocks.file_offset + self.blocks.file_size]), self.blocks.file_offset)
 
