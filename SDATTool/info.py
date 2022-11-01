@@ -188,3 +188,29 @@ class InfoBlock:
         self.data.write(pack("<I", padding))
         self.data.flush()
         self.data.seek(0)
+
+    def load(self, folder: str):
+        self.folder = folder
+        for record, info_class in records:
+            self.__dict__[record] = InfoBlockRecord(0)
+            self.__dict__[record].offsets = []
+            self.__dict__[record].records = []
+            self.__dict__[record].symbols = []
+            with open(f"{folder}/info/{record}.json", "r") as infile:
+                json_info = json.loads(infile.read())
+            for rec in json_info:
+                if rec:
+                    self.__dict__[record].records.append(info_class(*rec.values()))
+                    self.__dict__[record].symbols.append(self.__dict__[record].records[-1].symbol)
+                else:
+                    self.__dict__[record].records.append(info_class())
+                    self.__dict__[record].symbols.append("_")
+        header_offset = 8
+        for record, info_class in records:
+            header_offset += 4
+            num_records = len(self.__dict__[record].records)
+            for i in range(num_records):
+                if self.__dict__[record].records[i] and self.__dict__[record].records[i].symbol != "_":
+                    self.ids[self.__dict__[record].records[i].symbol] = i
+                    self.symbols[record][i] = self.__dict__[record].records[i].symbol
+

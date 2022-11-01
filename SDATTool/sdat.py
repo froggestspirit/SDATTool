@@ -186,6 +186,16 @@ class SDAT:
             self.data.flush()
             self.data.seek(0)
 
+    def load(self, folder:str):
+        self.info = InfoBlock(None)
+        self.info.load(folder)
+        self.info.sbnk_data = []
+        for sbnk in self.info.bank.records:
+            if sbnk.file_id:
+                self.info.sbnk_data.append(SBNK.load(sbnk.file_id, folder))
+            else:
+                self.info.sbnk_data.append(SBNK(None, -1))
+
 
 @dataclass
 class SymbHeader:

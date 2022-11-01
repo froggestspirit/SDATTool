@@ -175,6 +175,8 @@ class SBNK:
             swav_name = rec["swav"]
         except KeyError:
             swav_name = rec["split"][0]["swav"]
+        except TypeError:
+            return
         try:  # don't include the swar in the MD5, it will not be in the file
             del rec["swar"]
         except (TypeError, KeyError):
@@ -263,6 +265,7 @@ class SBNK:
                     count = (rec["range_high"] - rec["range_low"]) + 1
                     offset += 2
                 else:  # type == 17
+                    record_size = calcsize(record_struct)
                     rec["keysplits"] = unpack_from("<BBBBBBBB", self.data, offset=offset)
                     rec["instruments"] = []
                     count = len(tuple(i for i in rec["keysplits"] if i))
@@ -435,8 +438,8 @@ class SBNK:
                                         record["instruments"].append(split)
                                         record["instruments"][-1]["swar"] = record["instruments"][0]["swar"]
                                         record["instruments"][-1]["unknown"] = 1
-                                        rec_struct = inst_unformat(inst_type(**record["instruments"][-1]), info_block, _id)
-                                        cls.data.write(pack(record_struct, *rec_struct.values()))
+                                        cls.data = inst_unformat(inst_type(**record["instruments"][-1]), info_block, _id)
+                                        cls.data.write(pack(record_struct, *cls.data.values()))
                                     del record["instruments"][0]  # remove the dummy first record
                                     break
                                 else: # Either keysplits are in the base json, or there are none
@@ -445,14 +448,14 @@ class SBNK:
                                     if inst_type == SBNKInstMulti:
                                         if "unknown" not in rec.keys():
                                             rec["unknown"] = 1
-                                    rec_struct = inst_unformat(inst_type(**rec), info_block, _id)
-                                    cls.data.write(pack(record_struct, *rec_struct.values()))
+                                    cls.data = inst_unformat(inst_type(**rec), info_block, _id)
+                                    cls.data.write(pack(record_struct, *cls.data.values()))
                         else: # this assumes all instrument data is in the base json
                             if inst_type == SBNKInstMulti:
                                 if "unknown" not in rec.keys():
                                     rec["unknown"] = 1
-                            rec_struct = inst_unformat(inst_type(**rec), info_block, _id)
-                            cls.data.write(pack(record_struct, *rec_struct.values()))
+                            cls.data = inst_unformat(inst_type(**rec), info_block, _id)
+                            cls.data.write(pack(record_struct, *cls.data.values()))
                 offset = cls.data.tell()
             # pad to 0x04
             offset = cls.data.tell()
@@ -474,4 +477,77 @@ class SBNK:
             cls.data.flush()
             with open(f"{folder}/{name}", "wb") as converted_file:
                 converted_file.write(output_file.read())
+        return cls
+
+    @classmethod
+    def load(cls, name, folder):
+        with open(f"{folder}/{name.replace('.sbnk', '.json')}", "r") as infile:
+            json_data = json.loads(infile.read())
+        #print(json_data["records"][0]["instruments"][0]["swav"])
+        pointers = []
+        #print(len(pointers))
+        cls = SBNK(None, 0)
+        cls.data = []  # use data as a json list
+        for i in range(128):  # pre-append so we can have the empty records
+            cls.data.append({})
+            pointers.append(None)
+        for i in range(128):
+            try:
+                pointers[i] = json_data["pointers"][i]["index"]
+            except (KeyError, IndexError):
+                pass
+        for index, record in enumerate(json_data["records"]):
+            try:
+                ptr = pointers.index(index)
+                cls.data[ptr] = {"type": json_data["pointers"][ptr]["type"], "data": []}
+                if "unused" not in record.keys():
+                    count = 1
+                    inst_type = SBNKInst
+                    record_struct = "<HHBBBBBB"
+                    try:
+                        cls.data[ptr]["range_low"] = record["range_low"]
+                        cls.data[ptr]["range_high"] = record["range_high"]
+                        count = (cls.data[ptr]["range_high"] - cls.data[ptr]["range_low"]) + 1
+                        inst_type = SBNKInstMulti
+                        record_struct = "<HHHBBBBBB"
+                    except KeyError:
+                        pass
+                    try:
+                        cls.data[ptr]["keysplits"] = record["keysplits"]
+                        count = len(tuple(i for i in cls.data[ptr]["keysplits"] if i))
+                        inst_type = SBNKInstMulti
+                        record_struct = "<HHHBBBBBB"
+                    except KeyError:
+                        pass
+                    if count != len(record["instruments"]):
+                        raise ValueError(f"Unexpected count of instruments for record {index}")
+                    for rec in record["instruments"]:
+                        if "inst" in rec.keys():  #load external instrument jsons
+                            with open(f"{folder}/SBNK/{rec['inst']}", "r") as inst_file:
+                                temp_rec = json.loads(inst_file.read())
+                                if "keysplits" in temp_rec.keys():  #Keysplits are stored in the external instrument json
+                                    cls.data[ptr]["keysplits"] = temp_rec["keysplits"]
+                                    inst_type = SBNKInstMulti
+                                    record_struct = "<HHHBBBBBB"
+                                    for split in temp_rec["split"]:
+                                        record["instruments"].append(split)
+                                        record["instruments"][-1]["swar"] = record["instruments"][0]["swar"]
+                                        record["instruments"][-1]["unknown"] = 1
+                                        cls.data[ptr]["data"].append(inst_type(**record["instruments"][-1]))
+                                    del record["instruments"][0]  # remove the dummy first record
+                                    break
+                                else: # Either keysplits are in the base json, or there are none
+                                    rec.update(temp_rec)
+                                    del rec["inst"]
+                                    if inst_type == SBNKInstMulti:
+                                        if "unknown" not in rec.keys():
+                                            rec["unknown"] = 1
+                                    cls.data[ptr]["data"].append(inst_type(**rec))
+                        else: # this assumes all instrument data is in the base json
+                            if inst_type == SBNKInstMulti:
+                                if "unknown" not in rec.keys():
+                                    rec["unknown"] = 1
+                            cls.data[ptr]["data"].append(inst_type(**rec))
+            except ValueError:
+                pass
         return cls
