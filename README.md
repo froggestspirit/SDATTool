@@ -1,6 +1,8 @@
 # SDATTool
 By FroggestSpirit
 
+**** This is a branch specifically revived for the gen 4 poke decomps. Do not report issues on this branch ****
+
 Unpack/Pack NDS SDAT Files
 
 Make backups, this can overwrite files without confirmation
