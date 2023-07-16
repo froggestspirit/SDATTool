@@ -113,6 +113,7 @@ def write_sseq_to_midi(seq, args, fName):
     i = 0
     while i < len(seq.commands):
         cmd = seq.commands[i]
+
         if cmd.channel != channel:
             channel = cmd.channel
             lastDelay = 0
@@ -344,7 +345,11 @@ def read_sseq_from_midi(args, fName):
                 location += delay
 
             command = read_byte(midiData, midiPos)
-            midiPos += 1
+            if command & 0x80:
+                midiPos += 1
+                last_command = command
+            else:
+                command = last_command
             commandType = command & 0xF0
             if commandType == 0x90:  # Note on
                 thisCh = command & 0x0F
