@@ -1,4 +1,4 @@
-import os
+from pathlib import Path
 from const import itemString
 from util import read_long, read_short
 from Sseq import seqNote, Sequence, SSEQCommand, sseqCmdName
@@ -305,11 +305,16 @@ def write_sseq_to_midi(seq, args, fName):
     return trackEndCount == seq.trackCount
 
 
-def read_sseq_from_midi(args, fName):
-    testPath = f"{args.folder}/Files/{itemString[SEQ]}/{fName[:-5]}.mid"
-    if not os.path.exists(testPath):
-        raise Exception(f"Missing File:{testPath}")
-    with open(testPath, "rb") as midiFile:
+def read_sseq_from_midi(args, fName, build_path):
+    source_path = f"{args.folder}/Files/{itemString[SEQ]}/{fName[:-5]}.mid"
+    try:
+        if Path(source_path).stat().st_mtime <= Path(build_path).stat().st_mtime:
+            return None
+    except FileNotFoundError:
+        pass  # if the built file doesn't exist, it needs to be created
+    if not Path(source_path).exists():
+        raise Exception(f"Missing File:{source_path}")
+    with open(source_path, "rb") as midiFile:
         midiData = bytearray(midiFile.read())
     seq = Sequence()
     if midiData[0:8] != b'MThd\x00\x00\x00\x06':

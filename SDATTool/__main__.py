@@ -1,10 +1,11 @@
 #!/usr/bin/python3
 # SDAT-Tool by FroggestSpirit
-version = "1.4.0"
+version = "1.4.1"
 # Unpacks and builds SDAT files
 # Make backups, this can overwrite files without confirmation
 
-import os
+from pathlib import Path
+import shutil
 import time
 import argparse
 import json
@@ -40,8 +41,7 @@ class MyEncoder(json.JSONEncoder):
 
 def unpack(args):  # Unpack
     print("Unpacking...")
-    if not os.path.exists(args.folder):
-        os.makedirs(args.folder)
+    Path(args.folder).mkdir(parents=True, exist_ok=True)
     sdat = SDAT(fileName=args.SDATfile)
 
     # Symb Block
@@ -66,17 +66,19 @@ def unpack(args):  # Unpack
 
 
 def build(args):  # Build
-    if not os.path.exists(f"{args.folder}/FileBlock.json"):
-        raise Exception("Missing FileBlock.json\n")
-    if not os.path.exists(f"{args.folder}/InfoBlock.json"):
-        raise Exception("Missing InfoBlock.json\n")
     print("Building...")
     sdat = SDAT(noSymbBlock=args.noSymbBlock)
 
-    with open(f"{args.folder}/InfoBlock.json", "r") as infile:
+    if args.build_folder != args.folder:  # Copy the json files and create the build folder structure
+        Path(args.build_folder).mkdir(exist_ok=True)
+        shutil.copyfile(f"{args.folder}/FileBlock.json", f"{args.build_folder}/FileBlock.json")
+        shutil.copyfile(f"{args.folder}/InfoBlock.json", f"{args.build_folder}/InfoBlock.json")
+        
+
+    with open(f"{args.build_folder}/InfoBlock.json", "r") as infile:
         sdat.infoBlock = InfoBlock()
         sdat.infoBlock.load(sdat, json.load(infile))
-    with open(f"{args.folder}/FileBlock.json", "r") as infile:
+    with open(f"{args.build_folder}/FileBlock.json", "r") as infile:
         sdat.fileBlock = FileBlock()
         sdat.fileBlock.load(json.load(infile))
 
@@ -88,7 +90,7 @@ def build(args):  # Build
                     if not fName in progUsedName:
                         tempInstUsed = []
                         testPath = f"{args.folder}/Files/{itemString[SEQ]}/{fName[:-5]}.txt"
-                        if not os.path.exists(testPath):
+                        if not Path(testPath).exists():
                             raise Exception(f"Missing File:{testPath}")
                         with open(testPath, "r") as sseqFile:
                             done = False
@@ -228,8 +230,7 @@ def build(args):  # Build
                     sdat.infoBlock.wavarcInfo[-1].unkA = 0
                     sdat.fileBlock.file.append(sdat.fileBlock.File(f"{item.name}_WA.swar", "WAVARC"))
                     sdat.fileBlock.file[-1].subFile = []
-                    if not os.path.exists(f"{args.folder}/Files/{itemString[WAVARC]}/{item.name}_WA"):
-                        os.makedirs(f"{args.folder}/Files/{itemString[WAVARC]}/{item.name}_WA")
+                    Path(f"{args.folder}/Files/{itemString[WAVARC]}/{item.name}_WA").mkdir(exist_ok=True)
                     swarFileID = [None, None, None, None]
                     for j in range(4):
                         if len(usedSwav[j]) > 0:
@@ -327,10 +328,10 @@ def build(args):  # Build
     curFile = 0
     tFileBuffer = []
     for i, fName in enumerate(sdat.names[FILE]):  # Pack the binary files
-        testPath = f"{args.folder}/Files/{itemString[itemExt.index(fName[-5:])]}/{fName}"
-        if not os.path.exists(testPath):
-            testPath = f"{args.folder}/Files/{fName}"
-            if not os.path.exists(testPath):
+        testPath = f"{args.build_folder}/Files/{itemString[itemExt.index(fName[-5:])]}/{fName}"
+        if not Path(testPath).exists():
+            testPath = f"{args.build_folder}/Files/{fName}"
+            if not Path(testPath).exists():
                 raise Exception(f"Missing File:{testPath}")
         curFileLoc = (len(sdat.data) + sum(len(tf) for tf in tFileBuffer))
         write_long(sdat, (curFile * 16) + 12 + sdat.fatBlockOffset, curFileLoc)  # write file pointer to the fatBlock
@@ -363,6 +364,7 @@ def main():
     parser.add_argument("-or", "--optimize_ram", dest="optimizeRAM", action="store_true", help="Build Optimized for RAM")
     parser.add_argument("-ns", "--noSymbBlock", dest="noSymbBlock", action="store_true", help="Build without a SymbBlock")
     parser.add_argument("-wr", "--writeRaw", dest="writeRaw", action="store_true", help="Extract raw files")
+    parser.add_argument("-bf", "--build-folder",  type=str, help="Specify a separate build directory")
     args = parser.parse_args()
 
     if args.optimizeSize or args.optimizeRAM:
@@ -376,6 +378,9 @@ def main():
         args.folder = args.SDATfile.lower().replace(".sdat","")
     if args.SDATfile.lower() == args.folder.lower():
         raise ValueError("Input and output cannot match")
+
+    if not args.build_folder:
+        args.build_folder = args.folder
 
     ts = time.time()
     if not args.mode:

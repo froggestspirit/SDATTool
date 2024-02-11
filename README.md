@@ -26,6 +26,8 @@ Flags:
       -or Optimize for ram, try to minimize the size of files that need to be loaded for each song (testing, might be buggy)
 
       -wr Write raw, extract the raw files
+
+      -bf Build the buildable files to a different folder
       
 If only a SDAT file is provided, the output directory will be the same as the SDAT, with a new folder created. This will unpack to that folder. Similarly, the SDAT can be rebuilt from the same folder name if only the SDAT filename is provided with mode -b
 
@@ -39,6 +41,12 @@ To make better use of the -or option, first unpack a SDAT, then re-build it with
 
 To build with different sets of files (new files, or removing files for example), the FileBlock.json and InfoBlock.json should be modified appropriately.
 
+
+New in version 1.4.1:
+
+      -Add build folder capabilities
+      -Only build files if they're needed, or the source is more recently modified
+      -replace os with pathlib
 
 New in version 1.4.0:
 

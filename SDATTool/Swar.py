@@ -1,4 +1,4 @@
-import os
+from pathlib import Path
 from const import itemString
 from util import read_long
 
@@ -20,8 +20,7 @@ def unpack_swar(sdat, tempPath):
     tempSize = read_long(sdat, pos=sdat.pos + 8)
     numSwav = read_long(sdat, pos=sdat.pos + 0x38)
     sdat.fileBlock.file[-1].subFile = []
-    if not os.path.exists(tempPath):
-        os.makedirs(tempPath)
+    Path(tempPath).mkdir(exist_ok=True)
     for ii in range(numSwav):
         sdat.fileBlock.file[-1].subFile.append(f"{hex(ii).lstrip('0x').rstrip('L').zfill(2).upper()}.swav")
         swavOffset = sdat.pos + read_long(sdat, pos=sdat.pos + (ii * 4) + 0x3C)
@@ -41,14 +40,23 @@ def unpack_swar(sdat, tempPath):
 
 def build_swar(sdat, args, fName, swavName):
     swarTemp = []
+    max_mtime = 0
     for sName in swavName:
-        testPath = f"{args.folder}/Files/{itemString[WAVARC]}/{fName[:-5]}/{sName}"
-        if not os.path.exists(testPath):
-            raise Exception(f"Missing File:{testPath}")
-        with open(testPath, "rb") as tempFile:
+        source_path = f"{args.folder}/Files/{itemString[WAVARC]}/{fName[:-5]}/{sName}"
+        this_mtime = Path(source_path).stat().st_mtime
+        if this_mtime <= max_mtime:
+            max_mtime = this_mtime
+        if not Path(source_path).exists():
+            raise Exception(f"Missing File:{source_path}")
+        with open(source_path, "rb") as tempFile:
             swarTemp.append(bytearray(tempFile.read()))
-    testPath = f"{args.folder}/Files/{itemString[WAVARC]}/{fName}"
-    with open(testPath, "wb") as swarFile:
+    build_path = f"{args.build_folder}/Files/{itemString[WAVARC]}/{fName}"
+    try:
+        if max_mtime <= Path(build_path).stat().st_mtime:
+            return
+    except FileNotFoundError:
+        pass  # if the built file doesn't exist, it needs to be created
+    with open(build_path, "wb") as swarFile:
         swarSize = sum(len(sf[0x18:]) for sf in swarTemp)
         swarFile.write(b'SWAR')  # Header
         swarFile.write(b'\xFF\xFE\x00\x01')  # magic

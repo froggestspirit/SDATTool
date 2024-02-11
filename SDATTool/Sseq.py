@@ -1,4 +1,4 @@
-import os
+from pathlib import Path
 from const import itemString
 from util import read_long, read_short
 
@@ -317,11 +317,16 @@ def write_sseq_to_txt(seq, tempPath):
                         sseqFile.write(f"\t{cmd.command}\n")
     
 
-def read_sseq_from_txt(args, fName):
-    testPath = f"{args.folder}/Files/{itemString[SEQ]}/{fName[:-5]}.txt"
-    if not os.path.exists(testPath):
-        raise Exception(f"Missing File:{testPath}")
-    with open(testPath, "r") as sseqFile:
+def read_sseq_from_txt(args, fName, build_path):
+    source_path = f"{args.folder}/Files/{itemString[SEQ]}/{fName[:-5]}.txt"
+    try:
+        if Path(source_path).stat().st_mtime <= Path(build_path).stat().st_mtime:
+            return None
+    except FileNotFoundError:
+        pass  # if the built file doesn't exist, it needs to be created
+    if not Path(source_path).exists():
+        raise Exception(f"Missing File:{source_path}")
+    with open(source_path, "r") as sseqFile:
         done = False
         seq = Sequence()
         channel = -1
@@ -376,7 +381,11 @@ def read_sseq_from_txt(args, fName):
     return seq
 
 
-def write_sseq(seq, args, fName):
+def write_sseq(seq_func, args, fName):
+    build_path = f"{args.build_folder}/Files/{itemString[SEQ]}/{fName}"
+    seq = seq_func(args, fName, build_path)
+    if not seq:
+        return
     position = 0
     for cmd in seq.commands:  # fix positions and convert to binary
         cmd.position = position
@@ -426,8 +435,7 @@ def write_sseq(seq, args, fName):
             sseqHeader += b'\x93'
             sseqHeader += i.to_bytes(1, byteorder='little')
             sseqHeader += (seq.commands[seq.trackOffset[i]].position + headerSize).to_bytes(3, byteorder='little')
-    testPath = f"{args.folder}/Files/{itemString[SEQ]}/{fName}"
-    with open(testPath, "wb") as sseqFile:
+    with open(build_path, "wb") as sseqFile:
         sseqFile.write(sseqHeader)
 
         for cmd in seq.commands:  # fix label pointers

@@ -1,4 +1,4 @@
-import os
+from pathlib import Path
 from const import itemString
 from util import read_long, read_short
 
@@ -140,10 +140,16 @@ def unpack_sbnk(sdat, tempPath):
 
 
 def build_sbnk(sdat, args, fName):
-    testPath = f"{args.folder}/Files/{itemString[BANK]}/{fName[:-5]}.txt"
-    if not os.path.exists(testPath):
-        raise Exception(f"Missing File:{testPath}")
-    with open(testPath, "r") as sbnkIDFile:
+    source_path = f"{args.folder}/Files/{itemString[BANK]}/{fName[:-5]}.txt"
+    build_path = f"{args.build_folder}/Files/{itemString[BANK]}/{fName}"
+    try:
+        if Path(source_path).stat().st_mtime <= Path(build_path).stat().st_mtime:
+            return
+    except FileNotFoundError:
+        pass  # if the built file doesn't exist, it needs to be created
+    if not Path(source_path).exists():
+        raise Exception(f"Missing File:{source_path}")
+    with open(source_path, "r") as sbnkIDFile:
         done = False
         sbnkLines = []
         numInst = 0
@@ -237,8 +243,7 @@ def build_sbnk(sdat, args, fName):
         sbnkSize += 1
     sbnkHeader[2] = (sbnkSize).to_bytes(4, byteorder='little')
     sbnkHeader[5] = (sbnkSize - 0x10).to_bytes(4, byteorder='little')
-    testPath = f"{args.folder}/Files/{itemString[BANK]}/{fName}"
-    with open(testPath, "wb") as sbnkFile:
+    with open(build_path, "wb") as sbnkFile:
         for ii, listItem in enumerate(sbnkHeader):
             sbnkFile.write(listItem)
         for ii, listItem in enumerate(sbnkData):

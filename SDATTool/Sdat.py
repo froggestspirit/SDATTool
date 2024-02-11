@@ -1,5 +1,6 @@
-import os
+from pathlib import Path
 import hashlib
+import shutil
 from const import itemHeader, itemExt, itemString, infoBlockGroup, infoBlockGroupType
 from Sseq import read_sseq, write_sseq_to_txt, read_sseq_from_txt, write_sseq
 from Midi import write_sseq_to_midi, read_sseq_from_midi
@@ -504,18 +505,12 @@ def unpack_fileBlock(sdat, args):
     sdat.fileBlock = FileBlock()
     sdat.pos = sdat.fatOffset + 8
     entries = read_long(sdat, pos=sdat.pos)
-    if not os.path.exists(f"{args.folder}/Files"):
-        os.makedirs(f"{args.folder}/Files")
-    if not os.path.exists(f"{args.folder}/Files/{itemString[SEQ]}"):
-        os.makedirs(f"{args.folder}/Files/{itemString[SEQ]}")
-    if not os.path.exists(f"{args.folder}/Files/{itemString[SEQARC]}"):
-        os.makedirs(f"{args.folder}/Files/{itemString[SEQARC]}")
-    if not os.path.exists(f"{args.folder}/Files/{itemString[BANK]}"):
-        os.makedirs(f"{args.folder}/Files/{itemString[BANK]}")
-    if not os.path.exists(f"{args.folder}/Files/{itemString[WAVARC]}"):
-        os.makedirs(f"{args.folder}/Files/{itemString[WAVARC]}")
-    if not os.path.exists(f"{args.folder}/Files/{itemString[STRM]}"):
-        os.makedirs(f"{args.folder}/Files/{itemString[STRM]}")
+    Path(f"{args.folder}/Files").mkdir(exist_ok=True)
+    Path(f"{args.folder}/Files/{itemString[SEQ]}").mkdir(exist_ok=True)
+    Path(f"{args.folder}/Files/{itemString[SEQARC]}").mkdir(exist_ok=True)
+    Path(f"{args.folder}/Files/{itemString[BANK]}").mkdir(exist_ok=True)
+    Path(f"{args.folder}/Files/{itemString[WAVARC]}").mkdir(exist_ok=True)
+    Path(f"{args.folder}/Files/{itemString[STRM]}").mkdir(exist_ok=True)
     for i in range(entries):
         sdat.pos = read_long(sdat, pos=sdat.fatOffset + 12 + (i * 16))
         tempSize = read_long(sdat, pos=sdat.fatOffset + 16 + (i * 16))
@@ -563,13 +558,27 @@ def build_fileBlock(sdat, args):
     append_long(sdat, sdat.itemCount[FILE])  # number of files
     sdat.data += bytearray((0x20 - (len(sdat.data) & 0x1F)) & 0x1F)  # pad to the nearest 0x20 byte alignment
 
+    Path(f"{args.build_folder}/Files").mkdir(exist_ok=True)
+    Path(f"{args.build_folder}/Files/{itemString[SEQ]}").mkdir(exist_ok=True)
+    Path(f"{args.build_folder}/Files/{itemString[SEQARC]}").mkdir(exist_ok=True)
+    Path(f"{args.build_folder}/Files/{itemString[BANK]}").mkdir(exist_ok=True)
+    Path(f"{args.build_folder}/Files/{itemString[WAVARC]}").mkdir(exist_ok=True)
+    Path(f"{args.build_folder}/Files/{itemString[STRM]}").mkdir(exist_ok=True)
+
     for i, fName in enumerate(sdat.names[FILE]):  # Check for source files
-        testPath = f"{args.folder}/Files/{itemString[itemExt.index(fName[-5:])]}/{fName}"
-        if not os.path.exists(testPath):
-            if fName[-5:] == ".sbnk":  # can the sbnk be built?
-                build_sbnk(sdat, args, fName)
-            elif fName[-5:] == ".swar":  # can the swar be built?
-                swavName = sdat.fileBlock.file[i].subFile
-                build_swar(sdat, args, fName, swavName)
-            elif fName[-5:] == ".sseq":  # can the sseq be built?
-                write_sseq(read_sseq_from_midi(args, fName), args, fName)
+        if fName[-5:] == ".sbnk":  # can the sbnk be built?
+            build_sbnk(sdat, args, fName)
+        elif fName[-5:] == ".swar":  # can the swar be built?
+            swavName = sdat.fileBlock.file[i].subFile
+            build_swar(sdat, args, fName, swavName)
+        elif fName[-5:] == ".sseq":  # can the sseq be built?
+            write_sseq(read_sseq_from_midi, args, fName)
+        else:
+            source_path = f"{args.folder}/Files/{itemString[itemExt.index(fName[-5:])]}/{fName}"
+            dest_path = f"{args.build_folder}/Files/{itemString[itemExt.index(fName[-5:])]}/{fName}"
+            try:
+                if Path(source_path).stat().st_mtime <= Path(dest_path).stat().st_mtime:
+                    continue
+            except FileNotFoundError:
+                pass  # if the built file doesn't exist, it needs to be copied
+            shutil.copyfile(source_path, dest_path)
