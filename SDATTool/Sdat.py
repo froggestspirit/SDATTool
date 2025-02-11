@@ -41,9 +41,8 @@ class SDAT:
             self.SDATSize = read_long(self)
             self.headerSize = read_short(self)
             self.blocks = read_short(self)
-            if self.blocks == 4:
-                self.symbOffset = read_long(self)
-                self.symbSize = read_long(self)
+            self.symbOffset = read_long(self)
+            self.symbSize = read_long(self)
             self.infoOffset = read_long(self)
             self.infoSize = read_long(self)
             self.fatOffset = read_long(self)
